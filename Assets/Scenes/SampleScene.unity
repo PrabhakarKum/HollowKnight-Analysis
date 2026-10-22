@@ -826,6 +826,7 @@ GameObject:
   - component: {fileID: 480484870}
   - component: {fileID: 480484869}
   - component: {fileID: 480484871}
+  - component: {fileID: 480484872}
   m_Layer: 0
   m_Name: Player
   m_TagString: Untagged
@@ -1013,6 +1014,8 @@ MonoBehaviour:
   land: Land
   hardLand: Crouch
   bind: Crouch
+  ledgeClimb: LedgeClimb
+  ledgeClimbClipLength: 0.67
   dash: DashLoop
   sprint: DashLoop
   sprintSkid: DashEnd
@@ -1149,6 +1152,18 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 59b4c02b51b70ad43abbf9df0e5a44ad, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!114 &480484872
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 480484860}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: be5f6a963d0fa7740b7395b0f842bbe4, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
 --- !u!1 &495924611

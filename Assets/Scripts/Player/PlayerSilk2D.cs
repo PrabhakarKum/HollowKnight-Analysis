@@ -103,7 +103,7 @@ namespace Hollowknight.Player
             if (IsBinding || !BindReady) return false;
             if (health.Health >= health.MaxHealth) return false;           // nothing to heal
             if (health.IsDead || health.IsRespawning) return false;
-            if (controller.IsDamaged || controller.IsDashing || controller.IsHardLanding || controller.IsHeldForRespawn) return false;
+            if (controller.IsDamaged || controller.IsDashing || controller.IsHardLanding || controller.IsHeldForRespawn || controller.IsMantling) return false;
             if (combat != null && combat.IsAttacking) return false;
             return true;
         }

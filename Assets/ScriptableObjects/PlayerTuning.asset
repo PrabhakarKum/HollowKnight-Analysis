@@ -104,6 +104,22 @@ MonoBehaviour:
   shuttlecockSpeed: 14
   shuttlecockExtraSteps: 5
   shuttleCarryDecay: 7
+  mantleEnabled: 1
+  mantleMaxRiseSpeed: 5
+  mantleProbeHeight: 0.67
+  mantleProbeNear: 0.07
+  mantleProbeFar: 0.47
+  mantleHeadRay: 0.45
+  mantleDownRay: 2.26
+  mantleHeadroom: 2.16
+  mantleFlatTolerance: 0.1
+  mantleMinLedgeAboveGround: 1.5
+  mantleGroundProbe: 2
+  mantleTime: 0.4
+  mantleUpShare: 0.6
+  mantleStepForward: 0.7
+  mantleJumpCancelStep: 2
+  mantleCooldownSteps: 10
   groundMask:
     serializedVersion: 2
     m_Bits: 4294967295

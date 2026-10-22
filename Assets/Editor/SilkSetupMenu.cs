@@ -16,6 +16,7 @@ namespace Hollowknight.EditorTools
             if (player.GetComponent<PlayerSilk2D>() == null) Undo.AddComponent<PlayerSilk2D>(player.gameObject);
             if (player.GetComponent<BindEffect2D>() == null) Undo.AddComponent<BindEffect2D>(player.gameObject);
             if (player.GetComponent<SprintFx2D>() == null) Undo.AddComponent<SprintFx2D>(player.gameObject);
+            if (player.GetComponent<MantleFx2D>() == null) Undo.AddComponent<MantleFx2D>(player.gameObject);
             Debug.Log("Silk + bind added (and sprint dust: hold the dash key after a dash to sprint). Hit the dummies / enemy with the nail to fill the 9 silk pips; once you are hurt and the pips pulse, HOLD F (gamepad North) to bind and heal.");
         }
     }

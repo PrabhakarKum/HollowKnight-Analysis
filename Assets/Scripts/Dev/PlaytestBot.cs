@@ -31,6 +31,7 @@ namespace Hollowknight.Dev
         float peakY, minVy, maxVx;
         bool sawFloat;
         bool tracking;
+        bool mantleSaved = true;
 
         void Log(string s) => Debug.Log("[PLAYTEST] " + s);
 
@@ -84,6 +85,10 @@ namespace Hollowknight.Dev
             if (p == null) { Log("NO PLAYER"); Finish(); yield break; }
             rb = p.GetComponent<Rigidbody2D>();
             Log("start pos " + rb.position + " fixedDt " + Time.fixedDeltaTime);
+            // The mantle pulls the hero up onto the scene's platforms and wall tops, which would change what the older wall / ledge scenarios
+            // measure. It is switched off for every group except the mantle ones, and restored in Finish().
+            mantleSaved = p.Tuning.mantleEnabled;
+            p.Tuning.mantleEnabled = false;
 
             if (EditorPrefs.GetString("HK_MODE") == "hunt")
             {
@@ -152,6 +157,22 @@ namespace Hollowknight.Dev
                 {
                     EditorPrefs.SetString("HK_ONLY", "");
                     yield return SprintTests();
+                    Log("DONE");
+                    Finish();
+                    yield break;
+                }
+                if (EditorPrefs.GetString("HK_ONLY") == "mantleshots")
+                {
+                    EditorPrefs.SetString("HK_ONLY", "");
+                    yield return MantleShots();
+                    Log("DONE");
+                    Finish();
+                    yield break;
+                }
+                if (EditorPrefs.GetString("HK_ONLY") == "mantle")
+                {
+                    EditorPrefs.SetString("HK_ONLY", "");
+                    yield return MantleTests();
                     Log("DONE");
                     Finish();
                     yield break;
@@ -900,6 +921,7 @@ namespace Hollowknight.Dev
             yield return FeelTests();                             // hit-stop + screen shake
             yield return SilkTests();                             // silk + bind
             yield return SprintTests();                           // sprint + sprint jump
+            yield return MantleTests();                           // ledge mantle
         }
 
         /// <summary>The old scenarios (S1-S46 ...): run, jump, double jump, dash, wall slide / jump, combat, float, hard landing, camera. Opt-in: HK_ONLY = "legacy".</summary>
@@ -1985,6 +2007,161 @@ namespace Hollowknight.Dev
             }
         }
 
+        // ====================================================================== mantle (pull up onto a ledge)
+
+        readonly System.Collections.Generic.List<GameObject> blocks = new System.Collections.Generic.List<GameObject>();
+
+        GameObject SpawnBlock(Vector2 center, Vector2 size)
+        {
+            var go = new GameObject("PlaytestBlock");
+            go.transform.position = center;
+            var c = go.AddComponent<BoxCollider2D>(); c.size = size;
+            blocks.Add(go);
+            return go;
+        }
+
+        void ClearBlocks() { foreach (var b in blocks) if (b != null) Destroy(b); blocks.Clear(); }
+
+        class MantleRun { public bool saw; public MotionState state; public float seconds; public Vector2 end; public bool grounded; public float peak; public int pixels; }
+
+        /// <summary>Jump up the left face of a block at x -11 (top y 3.8 unless built otherwise), optionally holding toward it.</summary>
+        IEnumerator JumpAtBlock(float startX, bool holdToward, MantleRun r, System.Action<float> during = null)
+        {
+            var layer = Hollowknight.Feel.PixelFxLayer.Instance;
+            yield return Place(startX, 0.23f, 0.5f);
+            int e0 = layer.TotalEmitted;
+            float y0 = rb.position.y;
+            Track();
+            Key[] hold = holdToward ? new[] { Key.D, Key.Space } : new[] { Key.Space };
+            Key[] after = holdToward ? new[] { Key.D } : new Key[0];
+            Keys(hold);
+            float tStart = 0f; bool finished = false;
+            for (float t = 0; t < 2.6f; t += Time.deltaTime)
+            {
+                yield return null;
+                if (t > 0.45f) Keys(after);
+                if (p.IsMantling && !r.saw) { r.saw = true; r.state = p.State; tStart = Time.time; }
+                if (r.saw && !p.IsMantling && !finished) { finished = true; r.seconds = Time.time - tStart; }
+                if (t > 0.5f && p.IsGrounded && !p.IsMantling && Time.timeScale > 0.5f) break;
+            }
+            Keys();
+            r.end = rb.position; r.grounded = p.IsGrounded; r.peak = peakY - y0; r.pixels = layer.TotalEmitted - e0;
+            tracking = false;
+        }
+
+        IEnumerator MantleTests()
+        {
+            var tun = p.Tuning;
+            tun.mantleEnabled = true;                                  // off for the other groups, on for this one
+            var health = p.GetComponent<PlayerHealth2D>();
+            var hiddenP = new System.Collections.Generic.List<GameObject>();
+            foreach (var n in new[] { "Platform High", "Platform Low" }) { var g = GameObject.Find(n); if (g != null) { g.SetActive(false); hiddenP.Add(g); } }
+            if (health != null) yield return ResetDamageState(health);
+            const float topY = 4.5f;       // a full jump peaks with the feet ~0.9 below this and the head above it: too high to step up onto, in mantle range
+            Vector2 blockCenter = new Vector2(-9f, (topY - 0.5f) / 2f), blockSize = new Vector2(4f, topY + 0.5f);   // x -11..-7, from the ground up to y 3.8
+
+            // ---- S110-S111: a jump up against a ledge, holding toward it, pulls the hero up onto it
+            SpawnBlock(blockCenter, blockSize);
+            var run1 = new MantleRun();
+            yield return JumpAtBlock(-11.6f, true, run1);
+            float standY = topY + 0.7f;
+            Verdict("S110 jumping at a ledge (top y " + topY + ") while holding toward it: pulls up (mantled " + run1.saw + ", state " + run1.state + ", took " + run1.seconds.ToString("F2") + " s vs " + tun.mantleTime + "), ends standing on top at " + run1.end + " (grounded " + run1.grounded + ")",
+                run1.saw && run1.state == MotionState.Mantling && Mathf.Abs(run1.seconds - tun.mantleTime) < 0.1f && run1.grounded && Mathf.Abs(run1.end.y - standY) < 0.12f && run1.end.x > -10.9f && run1.end.x < -7.2f, "");
+            Verdict("S111 pixel effect: grit at the ledge corner and a dust puff on standing up (" + run1.pixels + " pixels)", run1.pixels >= 18, "");
+            ClearBlocks();
+
+            // ---- S112: a ledge barely above the ground is just a step: no mantle
+            SpawnBlock(new Vector2(-9f, (0.8f - 0.5f) / 2f), new Vector2(4f, 1.3f));       // top y 0.8, only 1.3 above the ground (< 1.5)
+            var run2 = new MantleRun();
+            yield return JumpAtBlock(-11.6f, true, run2);
+            Verdict("S112 a low ledge (1.3 above the ground, needs 1.5) is not mantled (mantled " + run2.saw + ", ends at " + run2.end + ")", !run2.saw && run2.grounded, "");
+            ClearBlocks();
+
+            // ---- S113: not pressing toward the ledge: no mantle
+            SpawnBlock(blockCenter, blockSize);
+            var run3 = new MantleRun();
+            yield return JumpAtBlock(-11.6f, false, run3);
+            Verdict("S113 jumping beside the ledge without pressing toward it does not mantle (mantled " + run3.saw + ", back at " + run3.end + ")", !run3.saw && run3.grounded && run3.end.x < -11f, "");
+            ClearBlocks();
+
+            // ---- S114: a roof close above the ledge: no room to stand, no mantle
+            SpawnBlock(blockCenter, blockSize);
+            SpawnBlock(new Vector2(-9f, topY + 1.5f + 0.3f), new Vector2(4f, 0.6f));      // slab bottom at y 5.3: only 1.5 of headroom (< 2.16)
+            var run4 = new MantleRun();
+            yield return JumpAtBlock(-11.6f, true, run4);
+            Verdict("S114 headroom above the ledge is only 1.5 (needs 2.16): no mantle (mantled " + run4.saw + ")", !run4.saw, "");
+            ClearBlocks();
+
+            // ---- S115: sprint-style approach: moving toward the ledge with dash held counts as pressing toward it
+            // (the original also accepts "dash held and moving that way"); skipped here - covered by the held-direction path above.
+
+            // ---- S116: pressing toward the ledge only AFTER the jump's peak (already falling) still catches it
+            SpawnBlock(blockCenter, blockSize);
+            yield return Place(-11.55f, 0.23f, 0.5f);                                                // 0.05 from the face: touching it
+            Keys(Key.Space); yield return new WaitForSeconds(0.32f); Keys();                         // a full-height jump straight up along the face, no direction held
+            yield return UntilTrue(() => rb.linearVelocity.y <= 0f, 1f);                              // wait for the peak: the window for the mantle is longest there
+            bool preMantle = p.IsMantling; float vyAtPress = rb.linearVelocity.y;
+            Keys(Key.D);                                                                             // now press toward the ledge
+            bool saw116 = false; MotionState st116 = MotionState.Falling;
+            for (float t = 0; t < 2.5f; t += Time.deltaTime)
+            {
+                yield return null;
+                if (p.IsMantling && !saw116) { saw116 = true; st116 = p.State; }
+                if (t > 0.3f && p.IsGrounded && !p.IsMantling) break;
+            }
+            Keys();
+            Verdict("S116 pressing toward the ledge only after the jump's peak (vy " + vyAtPress.ToString("F1") + ", already falling; mantling before the press " + preMantle + ") still catches it (mantled " + saw116 + ", state " + st116 + "), ends on top at " + rb.position,
+                !preMantle && vyAtPress < 5f && saw116 && p.IsGrounded && Mathf.Abs(rb.position.y - standY) < 0.12f, "");
+            ClearBlocks();
+            yield return new WaitForSeconds(0.3f);
+
+            // ---- S117: a jump press during the mantle cancels it into a jump
+            SpawnBlock(blockCenter, blockSize);
+            yield return Place(-11.6f, 0.23f, 0.5f);
+            Keys(Key.D, Key.Space); yield return new WaitForSeconds(0.3f); Keys(Key.D);            // jump up the face, release jump
+            yield return UntilTrue(() => p.IsMantling, 1f);
+            bool mantlingNow = p.IsMantling;
+            yield return new WaitForSeconds(0.12f);
+            float yCancel = rb.position.y; Track(); peakY = yCancel;
+            Keys(Key.D, Key.Space);                                                                  // fresh jump press mid-mantle
+            yield return new WaitForSeconds(0.1f);
+            bool stoppedMantle = !p.IsMantling; float vyAfter = rb.linearVelocity.y;
+            yield return new WaitForSeconds(0.35f);
+            float rise117 = peakY - yCancel;
+            Keys(); tracking = false;
+            Verdict("S117 jumping during the mantle cancels it into a jump (mantling " + mantlingNow + " -> " + !stoppedMantle + ", vy " + vyAfter.ToString("F1") + ", rose " + rise117.ToString("F2") + " u)", mantlingNow && stoppedMantle && vyAfter > 5f && rise117 > 0.5f, "");
+            ClearBlocks();
+            yield return WaitGrounded();
+
+            // ---- S118: a hit during the mantle ends it
+            if (health != null)
+            {
+                SpawnBlock(blockCenter, blockSize);
+                yield return Place(-11.6f, 0.23f, 0.5f);
+                Keys(Key.D, Key.Space); yield return new WaitForSeconds(0.3f); Keys(Key.D);
+                yield return UntilTrue(() => p.IsMantling, 1f);
+                int hits0 = health.HitsTaken; bool landed = false;
+                SpawnDamager((Vector2)rb.position + new Vector2(0.3f, 0f), new Vector2(1f, 1.4f), DamageKind.Enemy);
+                yield return WaitForHit(health, hits0, 1f, ok => landed = ok);
+                Verdict("S118 a hit during the mantle ends it (hit " + landed + ", mantling " + p.IsMantling + ", damaged " + p.IsDamaged + ")", landed && !p.IsMantling && p.IsDamaged, "");
+                Keys(); ClearBlocks(); yield return ResetDamageState(health);
+            }
+
+            // ---- S119: mantle can be switched off in the tuning
+            tun.mantleEnabled = false;
+            SpawnBlock(blockCenter, blockSize);
+            var run5 = new MantleRun();
+            yield return JumpAtBlock(-11.6f, true, run5);
+            tun.mantleEnabled = true;
+            yield return new WaitForSeconds(0.1f);
+            Verdict("S119 mantleEnabled=false: the same jump does not mantle (mantled " + run5.saw + ", ends at " + run5.end + ")", !run5.saw && run5.end.y < topY, "");
+            ClearBlocks();
+
+            foreach (var g in hiddenP) if (g != null) g.SetActive(true);
+            tun.mantleEnabled = false;                                 // back to the bot's default (restored by Finish)
+            Keys();
+        }
+
         // ====================================================================== sprint + sprint jump
 
         IEnumerator UntilTrue(System.Func<bool> cond, float timeout)
@@ -2223,6 +2400,23 @@ namespace Hollowknight.Dev
                 + " cancelled=" + (silkNow != null ? silkNow.BindsCancelled : -1) + " fHeld=" + (kb != null && kb.fKey.isPressed) + " state=" + p.State + " focused=" + Application.isFocused);
         }
 
+        IEnumerator MantleShots()
+        {
+            p.Tuning.mantleEnabled = true;
+            foreach (var n in new[] { "Platform High", "Platform Low" }) { var g = GameObject.Find(n); if (g != null) g.SetActive(false); }
+            SpawnBlock(new Vector2(-9f, 2f), new Vector2(4f, 5f));                                   // top at y 4.5
+            yield return Place(-11.6f, 0.23f, 0.6f);
+            Keys(Key.D, Key.Space); yield return new WaitForSeconds(0.3f); Keys(Key.D);
+            yield return UntilTrue(() => p.IsMantling, 1f);
+            Shot("m0_grab");
+            yield return new WaitForSeconds(0.1f); Shot("m1_up");
+            yield return new WaitForSeconds(0.1f); Shot("m2_over");
+            yield return new WaitForSeconds(0.11f); Shot("m3_finish");
+            yield return new WaitForSeconds(0.08f); Shot("m4_after");
+            Keys(); ClearBlocks();
+            Log("mantle shots done");
+        }
+
         IEnumerator SprintShots()
         {
             var tun = p.Tuning;
@@ -2420,6 +2614,7 @@ namespace Hollowknight.Dev
         void Finish()
         {
             tracking = false;
+            if (p != null && p.Tuning != null) p.Tuning.mantleEnabled = mantleSaved;     // tuning is a shared asset: put it back
             Keys();
             EditorApplication.isPlaying = false;
         }

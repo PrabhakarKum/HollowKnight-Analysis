@@ -368,6 +368,39 @@ Ours (`PlayerController2D` + tuning "Sprint", `SprintFx2D`, `CameraFollow2D.spri
   A first capture run right after a recompile did not sprint (input state lost); the same capture run again was fine (repeats the note about editor
   stalls right after a script reload).
 
+### Ledge mantle / clamber (read with ilspycmd; the climb motion is not readable, the ledge test is)
+Read (decompiled C#): the mantle trigger in `HeroController.Update`, `CheckClamberLedge`, `CheckNearRoof`, `CheckStillTouchingWall`, and the
+`startFromMantle` / `mantleRecovery` / flip-jump hooks. The climb itself runs in `mantleFSM` ("AIR MANTLE"), so its timing is NOT in the code.
+- Trigger (every frame): airborne (not on the ground, no ground touch), vertical speed < 5, pressing toward a wall (or moving that way with dash
+  held) that is still touched at mid / bottom height; blocked when in a no-clamber region, attacking in any direction, wall sliding, double-jumping,
+  downspike bouncing, hazard states, recoiling, or control is relinquished. It turns the hero toward the wall, then sends AIR MANTLE.
+- Ledge test (`CheckClamberLedge`): no roof close above (`CheckNearRoof`: two diagonal rays len 2 from the top corners, two upward rays len 1);
+  a horizontal ray at head height (0.67 above its pivot, 0.75 long) must hit nothing; two downward rays (2.26 long) from 0.37 and 0.77 ahead must
+  both hit, within 0.1 of the same height (a flat top); an upward ray (2.16) from each hit point must be clear (room to stand); and the ledge top
+  must be at least 1.5 above the ground under the hero (ground ray 2.0 long), so low steps are not mantles. Layer mask 8448 (two ground layers).
+- A jump pressed during the mantle cancels it into a flip jump (or backflip); `mantleRecovery` is set on leaving the mantle (what it blocks is not
+  readable).
+Ours (`PlayerController2D` TryStartMantle / CheckClamberLedge / HandleMantle, tuning "Mantle", `MantleFx2D`, ledge-climb animation):
+- The ledge test is ported rule for rule. DIFFERENCE: the original's forward distances (0.37 / 0.77 / 0.75) are measured from ITS centre and its
+  collider is narrower than ours (ours is 0.8 wide, so the ledge face is 0.4 from our centre, beyond the 0.37 probe - the first version found no
+  ledge at all). They are now measured from the hero's FRONT EDGE: 0.07 / 0.47 / 0.45, derived assuming ~0.3 half-width for the original (a guess).
+  The probe height 0.67, ray lengths and the 1.5 / 0.1 / 5.0 numbers are the original's, used as they are (our pivot is the collider centre).
+- Our motion (guess): 0.40 s, 60 % straight up then 0.7 forward onto the ledge, eased, gravity off, input ignored; `MotionState.Mantling`, the
+  pack's `LedgeClimb` clip sped up to fit; a jump press from the 2nd step cancels into a normal jump (buffered jump fires as a ground jump) and
+  blocks another mantle for 10 steps; a hit / death / bind cancels it. DIFFERENCE: we allow it while wall sliding and after a double jump has
+  finished rising (the original excludes both; our slide starts at the apex, where the mantle belongs). `mantleEnabled=false` restores the old behaviour.
+- Effects (original pixel art, same dust palette as the sprint): grit pixels shake loose from the ledge corner and fall; a dust puff sprays from
+  the feet on standing up. Checked in rendered frames (bot `mantleshots`).
+- Tests S110-S119 (`HK_ONLY=mantle`): jump at a 4.5-high ledge pulls up in 0.37 s and ends standing on top (y 5.22), 23 effect pixels, a 1.3-high
+  ledge is not mantled, no mantle without pressing toward it, no mantle with 1.5 of headroom, pressing toward the ledge only after the peak still
+  catches it, a jump during the mantle cancels it (rose 4.3 u), a hit ends it, `mantleEnabled=false`. Bug found by a diagnostic (`DebugMantleReason`):
+  the probes were too short for our wider collider. Test lesson: a ledge only ~0.9 above the feet is within the old 0.25 step-up + jump, so
+  the test ledge had to be raised; S116 first used a ~0.1 s timing window and missed it once.
+- IMPORTANT for the old scenarios: the mantle pulls the hero onto the scene's platforms and wall tops (7 old wall / ledge scenarios failed:
+  S3d S8 S19 S37 S45a/d/e), so the bot switches the mantle OFF for every group except the mantle ones and restores it in `Finish()`.
+- Not done: `mantleRecovery` effects, no-clamber regions, hanging on a ledge (the pack has `LedgeHang` / `LedgeGrab`), flip / backflip jump variants
+  out of the mantle, mantling while a swing is in recovery.
+
 ## Design notes (HK field names -> ours)
 JUMP_STEPS / JUMP_STEPS_MIN -> jumpSteps / jumpStepsMin
 LEDGE_BUFFER_STEPS -> coyoteSteps

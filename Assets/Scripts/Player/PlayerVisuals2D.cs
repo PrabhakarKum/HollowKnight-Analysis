@@ -20,6 +20,9 @@ namespace Hollowknight.Player
         [SerializeField] string land = "Land";
         [SerializeField] string hardLand = "Crouch";
         [SerializeField] string bind = "Crouch";
+        [SerializeField] string ledgeClimb = "LedgeClimb";
+        [Tooltip("Length of the pack's LedgeClimb clip in seconds (0.67); the animator is sped up to play it in the mantle time.")]
+        [SerializeField] float ledgeClimbClipLength = 0.67f;
         [SerializeField] string dash = "DashLoop";
         [SerializeField] string sprint = "DashLoop";
         [SerializeField] string sprintSkid = "DashEnd";
@@ -125,12 +128,14 @@ namespace Hollowknight.Player
         {
             if (controller == null || animator == null) return;
 
+            // the pack's ledge-climb clip is longer than our pull-up, so it is sped up to fit exactly
+            animator.speed = controller.IsMantling ? Mathf.Max(0.5f, ledgeClimbClipLength / Mathf.Max(0.05f, controller.Tuning.mantleTime)) : 1f;
 
             // dashes, wall slides and leaving the ground interrupt a one-shot
             // A wall jump (or any one-shot) starts inside a physics step that may still report "wall sliding" for one more
             // frame; that stale flag must not cancel the one-shot. Only a slide that begins later (a chain wall jump) does.
             bool slideInterrupts = controller.IsWallSliding && !lockIsAttack && Time.time - lockStartTime > 0.1f;
-            bool interrupt = controller.IsDashing || controller.IsHardLanding || slideInterrupts || controller.IsDamaged || controller.IsDead || controller.IsBinding;
+            bool interrupt = controller.IsDashing || controller.IsHardLanding || slideInterrupts || controller.IsDamaged || controller.IsDead || controller.IsBinding || controller.IsMantling;
             if (Time.time < lockUntil && !interrupt)
             {
                 // landing is cut short by running off; flips and wall jumps play out
@@ -145,6 +150,7 @@ namespace Hollowknight.Player
                 case MotionState.Dead: target = die; break;
                 case MotionState.Damaged: target = hurt; break;
                 case MotionState.Binding: target = bind; break;
+                case MotionState.Mantling: target = ledgeClimb; break;
                 case MotionState.HardLanding: target = hardLand; break;
                 case MotionState.Dashing: target = dash; break;
                 case MotionState.Sprinting: target = sprint; break;

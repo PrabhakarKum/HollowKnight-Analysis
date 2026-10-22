@@ -4,7 +4,7 @@ using Hollowknight.Feel;
 
 namespace Hollowknight.Player
 {
-    public enum MotionState { Grounded, Rising, Falling, Dashing, WallSliding, Floating, HardLanding, Damaged, Dead, Binding, Sprinting }
+    public enum MotionState { Grounded, Rising, Falling, Dashing, WallSliding, Floating, HardLanding, Damaged, Dead, Binding, Sprinting, Mantling }
 
     /// <summary>
     /// Run + variable-height jump + coyote/buffering + custom gravity + dash (ground/air)
@@ -33,7 +33,7 @@ namespace Hollowknight.Player
         public bool IsBouncing => bouncing;
         /// <summary>True while stuck in a hard landing; all input is ignored.</summary>
         public bool IsHardLanding => hardLanding;
-        public bool InputLocked => hardLanding || damageRecoilSteps > 0 || dead || respawnHold || binding;
+        public bool InputLocked => hardLanding || damageRecoilSteps > 0 || dead || respawnHold || binding || mantling;
         /// <summary>True while the hero is binding (rooted sideways, input ignored; set by PlayerSilk2D).</summary>
         public bool IsBinding => binding;
         /// <summary>True during the knock-back after a hit (input ignored, gravity off).</summary>
@@ -51,9 +51,13 @@ namespace Hollowknight.Player
         /// <summary>True during a sprint jump (the "shuttlecock"): forced forward speed until the fall begins.</summary>
         public bool IsShuttlecock => shuttle;
         public bool IsDashHeld => dashHeld;
+        /// <summary>True while the hero pulls itself up onto a ledge (input ignored except a jump, which cancels it).</summary>
+        public bool IsMantling => mantling;
 
         // one-off moments, for animation / audio / effects
-        public event System.Action GroundJumped, AirJumped, WallJumped, Landed, DashStarted, HardLanded, SprintStarted, ShuttleJumped;
+        public event System.Action GroundJumped, AirJumped, WallJumped, Landed, DashStarted, HardLanded, SprintStarted, ShuttleJumped, MantleFinished, MantleCancelled;
+        /// <summary>world position of the ledge corner being climbed</summary>
+        public event System.Action<Vector2> MantleStarted;
         /// <summary>true if the sprint ended on the ground at speed (a skid)</summary>
         public event System.Action<bool> SprintEnded;
 
@@ -116,6 +120,12 @@ namespace Hollowknight.Player
         bool sprinting;
         int sprintDir;
         int sprintBufferSteps;    // after leaving the ground while sprinting / dashing, a jump still counts as a sprint jump for this many steps
+        // mantle (pulling up onto a ledge)
+        bool mantling;
+        int mantleStep, mantleTotalSteps, mantleDir, mantleCooldown;
+        Vector2 mantleFrom, mantleVia, mantleTo;
+        readonly RaycastHit2D[] rayHits = new RaycastHit2D[8];
+
         bool shuttle;
         int shuttleDir;
         float carryX;             // speed left over after a sprint jump is cut off in the air; fades out, and turning around cancels it
@@ -182,12 +192,15 @@ namespace Hollowknight.Player
             if (dead || respawnHold) { HandleLockedOut(); return; }
             if (damageRecoilSteps > 0) { HandleDamageRecoil(); return; }
             if (binding) { HandleBinding(); return; }
+            if (mantling) { HandleMantle(); return; }
 
             if (hardLanding)
             {
                 HandleHardLanding();
                 return;
             }
+
+            if (TryStartMantle()) { HandleMantle(); return; }
 
             HandleDash();
             if (dashing)
@@ -229,6 +242,7 @@ namespace Hollowknight.Player
             if (dashCooldown > 0) dashCooldown--;
             if (wallLockSteps > 0) wallLockSteps--;
             if (sprintBufferSteps > 0) sprintBufferSteps--;
+            if (mantleCooldown > 0) mantleCooldown--;
         }
 
         // ------------------------------------------------------------------ sensing
@@ -640,12 +654,165 @@ namespace Hollowknight.Player
             jumpStepsDone++;
         }
 
+        // ------------------------------------------------------------------ mantle (pull up onto a ledge)
+
+        /// <summary>First solid thing along a ray, ignoring triggers and the hero itself.</summary>
+        bool RayHit(Vector2 origin, Vector2 dir, float length, out RaycastHit2D hit)
+        {
+            hit = default;
+            int n = Physics2D.Raycast(origin, dir.normalized, groundFilter, rayHits, length);
+            bool found = false; float best = float.MaxValue;
+            for (int i = 0; i < n; i++)
+            {
+                var h = rayHits[i];
+                if (h.collider == null || h.collider == col || h.collider.transform.IsChildOf(transform)) continue;
+                if (h.distance < best) { best = h.distance; hit = h; found = true; }
+            }
+            return found;
+        }
+
+        /// <summary>A solid roof close above the head (port of the original's CheckNearRoof): two diagonal rays and two upward rays.</summary>
+        bool NearRoof()
+        {
+            var b = col.bounds;
+            Vector2 max = b.max, min = b.min, c = b.center;
+            return RayHit(new Vector2(min.x, max.y), new Vector2(-0.5f, 1f), 2f, out _)
+                || RayHit(max, new Vector2(0.5f, 1f), 2f, out _)
+                || RayHit(new Vector2(c.x + b.size.x / 4f, max.y), Vector2.up, 1f, out _)
+                || RayHit(new Vector2(c.x - b.size.x / 4f, max.y), Vector2.up, 1f, out _);
+        }
+
+        /// <summary>
+        /// The ledge test, ported from the original's CheckClamberLedge: free space ahead at head height, a flat ledge top found by two
+        /// downward probes, headroom above it, no roof overhead, and the ledge well above the ground under the hero.
+        /// </summary>
+        bool CheckClamberLedge(int dir, out float ledgeY)
+        {
+            ledgeY = 0f;
+            if (NearRoof()) return false;
+            var b = col.bounds;
+            Vector2 c = b.center;
+            var forward = new Vector2(dir, 0f);
+            float h = tuning.mantleProbeHeight;
+
+            float edge = b.extents.x;                                            // probes are measured from the hero's front edge
+            if (RayHit(c + new Vector2(0f, h), forward, edge + tuning.mantleHeadRay, out _)) return false;     // something in front of the head: not a ledge
+
+            Vector2 farOrigin = c + new Vector2(dir * (edge + tuning.mantleProbeFar), h);
+            Vector2 nearOrigin = c + new Vector2(dir * (edge + tuning.mantleProbeNear), h);
+            if (!RayHit(farOrigin, Vector2.down, tuning.mantleDownRay, out var farHit)) return false;
+            if (!RayHit(nearOrigin, Vector2.down, tuning.mantleDownRay, out var nearHit)) return false;
+            if (RayHit(farHit.point + new Vector2(0f, 0.1f), Vector2.up, tuning.mantleHeadroom, out _)) return false;   // no room to stand
+            if (RayHit(nearHit.point + new Vector2(0f, 0.1f), Vector2.up, tuning.mantleHeadroom, out _)) return false;
+            if (Mathf.Abs(farHit.point.y - nearHit.point.y) > tuning.mantleFlatTolerance) return false;               // not a flat top
+
+            // a ledge barely above the ground under the hero is just a step, not a mantle
+            if (RayHit(new Vector2(c.x, b.min.y + 0.2f), Vector2.down, tuning.mantleGroundProbe, out var below)
+                && farHit.point.y - below.point.y < tuning.mantleMinLedgeAboveGround) return false;
+
+            ledgeY = farHit.point.y;
+            return true;
+        }
+
+        /// <summary>
+        /// Like the original: airborne, not shooting upward, pressing toward a wall (or moving that way with dash held) that is still
+        /// touched, not swinging / double-jumping / recoiling, and a ledge in reach.
+        /// </summary>
+        bool TryStartMantle()
+        {
+            if (!tuning.mantleEnabled || mantleCooldown > 0) return false;
+            if (IsGrounded || AttackLocked || bouncing || hardLanding || damageRecoilSteps > 0 || recoilStepsLeft > 0) return false;
+            if (rb.linearVelocity.y >= tuning.mantleMaxRiseSpeed) return false;
+
+            int dir = moveX != 0f ? (int)moveX : (dashHeld && Mathf.Abs(rb.linearVelocity.x) > 0.1f ? (int)Mathf.Sign(rb.linearVelocity.x) : 0);
+            if (dir == 0 || WallDirection != dir) return false;
+            if (!CheckClamberLedge(dir, out float ledgeY)) return false;
+
+            var b = col.bounds;
+            float standY = rb.position.y + (ledgeY - b.min.y) + 0.02f;      // standing on the ledge top, a hair above it
+            Vector2 from = rb.position;
+            Vector2 via = new Vector2(from.x, standY);                         // straight up first ...
+            Vector2 to = new Vector2(from.x + dir * tuning.mantleStepForward, standY);   // ... then onto the ledge
+            var size = new Vector2(b.size.x * 0.96f, b.size.y * 0.96f);
+            Vector2 offset = (Vector2)b.center - rb.position;
+            if (!BoxFree(via + offset, size) || !BoxFree(to + offset, size)) return false;                         // the pull-up path must be clear
+
+            CancelAllActions();
+            mantling = true;
+            mantleDir = dir;
+            mantleStep = 0;
+            mantleTotalSteps = Mathf.Max(3, Mathf.RoundToInt(tuning.mantleTime / Time.fixedDeltaTime));
+            mantleFrom = from; mantleVia = via; mantleTo = to;
+            FaceDirection(dir);
+            wallSlideSide = 0; IsWallSliding = false;
+            rb.linearVelocity = Vector2.zero;
+            MantleStarted?.Invoke(new Vector2(b.center.x + dir * b.extents.x, ledgeY));
+            return true;
+        }
+
+        /// <summary>Debug helper for tests: why a mantle would not start right now (first failing condition), or "ok".</summary>
+        public string DebugMantleReason()
+        {
+            if (!tuning.mantleEnabled) return "disabled";
+            if (mantleCooldown > 0) return "cooldown";
+            if (IsGrounded) return "grounded";
+            if (AttackLocked || bouncing || hardLanding || damageRecoilSteps > 0 || recoilStepsLeft > 0) return "locked/attacking/recoil";
+            if (rb.linearVelocity.y >= tuning.mantleMaxRiseSpeed) return "rising too fast vy=" + rb.linearVelocity.y.ToString("F1");
+            int dir = moveX != 0f ? (int)moveX : 0;
+            if (dir == 0) return "no direction held";
+            if (WallDirection != dir) return "wall dir " + WallDirection + " != " + dir;
+            var b = col.bounds; Vector2 c = b.center; var fwd = new Vector2(dir, 0f);
+            if (NearRoof()) return "near roof";
+            float edge = b.extents.x;
+            if (RayHit(c + new Vector2(0f, tuning.mantleProbeHeight), fwd, edge + tuning.mantleHeadRay, out var hh)) return "head ray blocked by " + hh.collider.name + " at y=" + (c.y + tuning.mantleProbeHeight).ToString("F2");
+            if (!RayHit(c + new Vector2(dir * (edge + tuning.mantleProbeFar), tuning.mantleProbeHeight), Vector2.down, tuning.mantleDownRay, out var fh)) return "far probe found nothing";
+            if (!RayHit(c + new Vector2(dir * (edge + tuning.mantleProbeNear), tuning.mantleProbeHeight), Vector2.down, tuning.mantleDownRay, out var nh)) return "near probe found nothing";
+            if (RayHit(fh.point + new Vector2(0f, 0.1f), Vector2.up, tuning.mantleHeadroom, out _)) return "no headroom (far)";
+            if (RayHit(nh.point + new Vector2(0f, 0.1f), Vector2.up, tuning.mantleHeadroom, out _)) return "no headroom (near)";
+            if (Mathf.Abs(fh.point.y - nh.point.y) > tuning.mantleFlatTolerance) return "not flat " + fh.point.y.ToString("F2") + "/" + nh.point.y.ToString("F2");
+            if (RayHit(new Vector2(c.x, b.min.y + 0.2f), Vector2.down, tuning.mantleGroundProbe, out var below) && fh.point.y - below.point.y < tuning.mantleMinLedgeAboveGround) return "ledge too low above ground";
+            return "ok (ledge y " + fh.point.y.ToString("F2") + ")";
+        }
+
+        void HandleMantle()
+        {
+            mantleStep++;
+            rb.linearVelocity = Vector2.zero;                                   // gravity off, we place the hero ourselves
+
+            // a jump pressed during the mantle cancels it into a jump (the original lets a jump cancel the mantle)
+            if (mantleStep >= tuning.mantleJumpCancelStep && mantleStep < mantleTotalSteps && jumpQueueSteps > 0)
+            {
+                mantling = false;
+                mantleCooldown = tuning.mantleCooldownSteps;
+                ledgeSteps = tuning.coyoteSteps;                                // the buffered jump then fires as a ground jump next step
+                jumpedSinceGrounded = false;
+                MantleCancelled?.Invoke();
+                UpdateState();
+                return;
+            }
+
+            float t = Mathf.Clamp01(mantleStep / (float)mantleTotalSteps);
+            float split = tuning.mantleUpShare;
+            Vector2 pos;
+            if (t < split) { float u = t / split; pos = Vector2.Lerp(mantleFrom, mantleVia, 1f - (1f - u) * (1f - u)); }        // ease out going up
+            else { float u = (t - split) / (1f - split); pos = Vector2.Lerp(mantleVia, mantleTo, u * u * (3f - 2f * u)); }       // ease in-out stepping onto the ledge
+            rb.position = pos;
+            if (mantleStep >= mantleTotalSteps)
+            {
+                rb.position = mantleTo;
+                mantling = false;
+                MantleFinished?.Invoke();
+            }
+            UpdateState();
+        }
+
         // ------------------------------------------------------------------ damage hooks (used by PlayerHealth2D)
 
         /// <summary>Drops everything the hero was doing: dash, jump, float, wall slide, pogo, hard landing, queued presses.</summary>
         void CancelAllActions()
         {
             dashing = false; jumping = false; bouncing = false; IsFloating = false;
+            if (mantling) { mantling = false; MantleCancelled?.Invoke(); }
             if (sprinting) { sprinting = false; SprintEnded?.Invoke(false); }
             shuttle = false; carryX = 0f; sprintBufferSteps = 0;
             recoilStepsLeft = 0; wallLockSteps = 0; hardLanding = false;
@@ -981,6 +1148,7 @@ namespace Hollowknight.Player
             if (dead) { State = MotionState.Dead; return; }
             if (damageRecoilSteps > 0) { State = MotionState.Damaged; return; }
             if (binding) { State = MotionState.Binding; return; }
+            if (mantling) { State = MotionState.Mantling; return; }
             if (hardLanding) { State = MotionState.HardLanding; return; }
             if (dashing) { State = MotionState.Dashing; return; }
             if (sprinting && IsGrounded) { State = MotionState.Sprinting; return; }

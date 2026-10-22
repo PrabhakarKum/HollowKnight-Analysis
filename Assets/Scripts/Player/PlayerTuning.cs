@@ -206,6 +206,32 @@ namespace Hollowknight.Player
         [Tooltip("When a sprint jump is cut off in the air (the fall starts, a swing, a double jump), its speed fades out at this rate per second (turning around cancels it).")]
         public float shuttleCarryDecay = 7f;
 
+        [Header("Mantle / clamber (the ledge test and the numbers marked 'read' come from the original's CheckClamberLedge; the climb motion is a PlayMaker state machine we cannot read, so its timing is our guess)")]
+        [Tooltip("Off = the hero never pulls itself up onto ledges (the old behaviour).")]
+        public bool mantleEnabled = true;
+        [Tooltip("Read: a mantle can only start while the vertical speed is below this (not while still shooting upward).")]
+        public float mantleMaxRiseSpeed = 5f;
+        [Tooltip("Read: probe height above the hero's centre for the ledge test (the original uses 0.67).")]
+        public float mantleProbeHeight = 0.67f;
+        [Tooltip("Derived from the original (0.37 / 0.77 ahead of ITS centre, 0.75 head ray), but measured here from our hero's FRONT EDGE because our collider is wider than the original's (assumed ~0.3 half-width there): how far past the hero's front edge the two downward ledge probes are, and the length of the free-space ray at head height beyond the edge.")]
+        public float mantleProbeNear = 0.07f, mantleProbeFar = 0.47f, mantleHeadRay = 0.45f;
+        [Tooltip("Read: length of the downward ledge probes (2.26) and of the upward headroom check above the ledge (2.16).")]
+        public float mantleDownRay = 2.26f, mantleHeadroom = 2.16f;
+        [Tooltip("Read: the two ledge probes must land within this height of each other (a flat ledge top).")]
+        public float mantleFlatTolerance = 0.1f;
+        [Tooltip("Read: the ledge top must be at least this far above the ground under the hero (1.5), so low steps are not mantled; the ground probe is 2.0 long.")]
+        public float mantleMinLedgeAboveGround = 1.5f, mantleGroundProbe = 2f;
+        [Tooltip("Seconds the pull-up takes (guess). The ledge-climb animation is sped up to fit.")]
+        public float mantleTime = 0.40f;
+        [Tooltip("Share of the pull-up spent going straight up before stepping onto the ledge (guess).")]
+        [Range(0.2f, 0.9f)] public float mantleUpShare = 0.6f;
+        [Tooltip("How far the hero ends up past its starting x, onto the ledge (guess).")]
+        public float mantleStepForward = 0.7f;
+        [Tooltip("A jump press this many steps into the mantle cancels it into a jump (the original lets a jump cancel the mantle).")]
+        public int mantleJumpCancelStep = 2;
+        [Tooltip("Steps after a cancelled mantle before another may start (guess).")]
+        public int mantleCooldownSteps = 10;
+
         [Header("Ground check")]
         public LayerMask groundMask = ~0;
         public float groundCheckDistance = 0.06f;

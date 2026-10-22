@@ -29,6 +29,9 @@ then re-implements it. The owner owns a purchased copy of the game.
 4. Think about how the player *feels*, not only whether code is correct. The owner found most bugs by playing.
 5. **Float is OFF** (owner does not want the player to float at all). `PlayerTuning.floatEnabled = false`. Do not re-enable.
 6. The owner asked to work one mechanic at a time: read the real logic from the DLL, match it, test, update notes, ask what next.
+7. **Git** (repo: github.com/PrabhakarKum/HollowKnight-Analysis, public, only the owner): do NOT add Claude as co-author / collaborator (no
+   `Co-Authored-By` trailer, no "Generated with Claude" text). Do NOT commit or push on your own: leave changes uncommitted so the owner sees the
+   diff in GitHub Desktop and commits them. Licensed assets (DeadRevolver, vHierarchy/vInspector/vFolders) stay out of the repo (see README).
 
 ## 3. Folder / file map
 ```
@@ -117,7 +120,11 @@ J / C / left mouse / gamepad West = attack; hold W/Up = up-slash; hold S/Down in
   sprint is a PlayMaker FSM we cannot read); the structure comes from the DLL hooks. `PlayerTuning.sprintEnabled=false` restores the old dash.
   Details: HOLLOWKNIGHT_ANALYSIS.md "Sprint and sprint jump".
 
-Known gaps / not done: silk regen / upgrades, back-sprint / wall-sprint launch, per-state camera look-ahead for sprint/harpoon, wall-slide acceleration detail, tools,
+- **Ledge mantle** (added after sprint): jump toward a ledge with your head above its top and the hero pulls itself up onto it (0.4 s, jump
+  cancels it). The ledge test is the original's (read from the DLL, probes adapted to our wider collider); the climb timing is a guess.
+  `PlayerTuning.mantleEnabled=false` restores the old behaviour. Details: HOLLOWKNIGHT_ANALYSIS.md "Ledge mantle / clamber".
+
+Known gaps / not done: mantle hang / flip variants, silk regen / upgrades, back-sprint / wall-sprint launch, per-state camera look-ahead for sprint/harpoon, wall-slide acceleration detail, tools,
 silk/resources, real enemies (only dummies, a patrolling test enemy and spikes exist), other damage types, parry, hurt/death
 animation check by eye (uses the pack's `HitDamage` and `Die` clips).
 
@@ -138,7 +145,9 @@ EditorApplication.isPlaying = true;
 ```
 Read results with bash: find the last line containing `[PLAYTEST] keyboard`, then grep `[PLAYTEST] PASS|FAIL` after it, wait for
 `[PLAYTEST] DONE`. TEST SUITE SIZE (owner asked to shrink it): the DEFAULT run (`HK_ONLY=""`) now runs only the newer mechanics - damage S50-S67, hit-stop/shake FS*,
-silk + bind S70-S82, sprint S90-S106 = **69 PASS / 0 FAIL in ~2.4 min**. The old scenarios (run, jump, double jump, dash, wall slide/jump, combat, float,
+silk + bind S70-S82, sprint S90-S106, mantle S110-S119 = 78 checks (~3 min; was 69 + mantle 9). Latest `all` run (old + new): **145 PASS / 0 FAIL**.
+The bot switches the mantle OFF for every group except `mantle` / `mantleshots` (it would pull the hero onto the scene's platforms and wall tops
+and change what the old wall/ledge scenarios measure) and restores it in `Finish()`. `HK_ONLY=mantleshots` writes PNGs of the pull-up. The old scenarios (run, jump, double jump, dash, wall slide/jump, combat, float,
 hard landing, camera - all had passed repeatedly) are kept, not deleted, behind `HK_ONLY="legacy"`; `HK_ONLY="all"` runs both (~7 min).
 Full copy of the bot before the split: `Backups/PlaytestBot.full-suite.cs.txt`. When a new mechanic touches old movement (jump, dash, wall, landing),
 run `legacy` once before calling it done.
