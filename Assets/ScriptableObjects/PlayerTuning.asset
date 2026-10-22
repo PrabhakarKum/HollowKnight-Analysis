@@ -1,0 +1,111 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: eecd415bff75b7f4ca09b7a6403855de, type: 3}
+  m_Name: PlayerTuning
+  m_EditorClassIdentifier: 
+  runSpeed: 8.3
+  groundAcceleration: 140
+  groundDeceleration: 180
+  airAcceleration: 90
+  airDeceleration: 90
+  inputDeadzone: 0.2
+  jumpSpeed: 15
+  jumpSteps: 7
+  jumpStepsMin: 4
+  jumpEndVelocityKeep: 0.5
+  jumpNaturalEndKeep: 1
+  airJumps: 1
+  doubleJumpSpeed: 12
+  doubleJumpSteps: 6
+  doubleJumpStepsMin: 6
+  airJumpMinGroundGap: 0.3
+  floatEnabled: 0
+  floatFallSpeed: 3.5
+  floatFromPressDuringRise: 0
+  floatMinGroundGap: 1
+  floatMaxSteps: 100
+  gravity: 70
+  maxFallSpeed: 20
+  hangGravityMultiplier: 0.45
+  hangGravityRampPerSecond: 3
+  coyoteSteps: 8
+  jumpBufferSteps: 6
+  jumpReleaseBufferSteps: 4
+  dashSpeed: 22
+  dashSteps: 9
+  airDashSteps: 8
+  dashCooldownSteps: 23
+  jumpDashCooldownSteps: 3
+  dashBufferSteps: 6
+  airDashes: 1
+  dashExitSpeedFactor: 1
+  wallCheckDistance: 0.08
+  wallSlideSpeed: 3.5
+  wallCoyoteSteps: 5
+  wallStickySteps: 8
+  wallJumpSpeedX: 12
+  wallJumpLockSteps: 10
+  wallResetsAirDash: 1
+  cornerCorrection: 0.3
+  ledgeStepUp: 0.25
+  hardLandingEnabled: 1
+  bigFallTime: 1.1
+  hardLandingTime: 0.5
+  attackDuration: 0.3
+  attackCooldown: 0.36
+  slashActiveTime: 0.14
+  attackBufferSteps: 6
+  comboResetTime: 0.4
+  forwardSlashSize: {x: 1.6, y: 1.2}
+  forwardSlashOffset: {x: 1.2, y: 0.15}
+  upSlashSize: {x: 1.4, y: 1.5}
+  upSlashOffset: {x: 0, y: 1.15}
+  downSlashSize: {x: 1.4, y: 1.4}
+  downSlashOffset: {x: 0, y: -1.1}
+  recoilSteps: 5
+  recoilSpeed: 8
+  bounceStartSteps: 3
+  wallSlashMaxFall: 5
+  upSlashWallPush: 0.8
+  maxHealth: 5
+  invulnerableTime: 1.3
+  damageRecoilVelocity: {x: 9, y: 5}
+  damageRecoilTime: 0.2
+  deathRespawnDelay: 1.6
+  hazardRespawnDelay: 0.5
+  respawnHoldTime: 0.25
+  flickerInterval: 0.08
+  flickerDimAlpha: 0.3
+  heroDamageFreeze: 0
+  heroDamageShake: 3
+  heroDeathShake: 5
+  nailHitFreeze: 6
+  nailHitShake: 1
+  hardLandShake: 3
+  fallRumbleEnabled: 1
+  shakeFreezeFrames: 1
+  maxSilk: 9
+  silkPerHit: 1
+  bindCost: 9
+  bindTime: 1
+  bindHeal: 3
+  sprintEnabled: 1
+  sprintSpeed: 14
+  sprintAcceleration: 70
+  shuttlecockSpeed: 14
+  shuttlecockExtraSteps: 5
+  shuttleCarryDecay: 7
+  groundMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  groundCheckDistance: 0.06
+  maxGroundAngle: 50

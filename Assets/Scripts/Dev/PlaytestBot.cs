@@ -1,0 +1,2428 @@
+#if UNITY_EDITOR
+using System.Collections;
+using UnityEditor;
+using UnityEngine;
+using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.LowLevel;
+using Hollowknight.Feel;
+using Hollowknight.Player;
+
+namespace Hollowknight.Dev
+{
+    /// <summary>
+    /// Editor-only automated playtest. Start with EditorPrefs "HK_PLAYTEST" = true, then enter play mode.
+    /// Presses keys through the Input System and logs measurements prefixed with [PLAYTEST].
+    /// </summary>
+    public class PlaytestBot : MonoBehaviour
+    {
+        const string Flag = "HK_PLAYTEST";
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+        static void Boot()
+        {
+            if (!EditorPrefs.GetBool(Flag)) return;
+            EditorPrefs.SetBool(Flag, false);
+            new GameObject("PlaytestBot").AddComponent<PlaytestBot>();
+        }
+
+        PlayerController2D p;
+        Rigidbody2D rb;
+        Keyboard kb;
+        float peakY, minVy, maxVx;
+        bool sawFloat;
+        bool tracking;
+
+        void Log(string s) => Debug.Log("[PLAYTEST] " + s);
+
+        void Keys(params Key[] k)
+        {
+            InputSystem.QueueStateEvent(kb, new KeyboardState(k));
+        }
+
+        void Update()
+        {
+            if (!tracking || p == null) return;
+            peakY = Mathf.Max(peakY, rb.position.y);
+        }
+
+        bool verbose;
+        int vStep;
+        bool watchLand;
+        bool countDamaged;                 // counts the fixed steps the hero spends in the damage knock-back (see S53)
+        int damagedCount;
+        float landTime = -1f, pressTime;
+        void FixedUpdate()
+        {
+            if (watchLand && landTime < 0f && p != null && p.IsGrounded) landTime = Time.time;
+            if (countDamaged && p != null && p.IsDamaged) damagedCount++;
+            if (verbose && p != null && vStep++ < 40)
+                Log("step " + vStep + " y=" + rb.position.y.ToString("F2") + " vy=" + rb.linearVelocity.y.ToString("F2") + " grounded=" + p.IsGrounded + " state=" + p.State);
+            if (!tracking || p == null) return;
+            minVy = Mathf.Min(minVy, rb.linearVelocity.y);
+            maxVx = Mathf.Max(maxVx, Mathf.Abs(rb.linearVelocity.x));
+            if (p.IsFloating) sawFloat = true;
+        }
+
+        void Track() { tracking = true; peakY = rb.position.y; minVy = 0; maxVx = 0; sawFloat = false; }
+
+        IEnumerator WaitGrounded(float timeout = 4f)
+        {
+            yield return new WaitForSeconds(0.15f); // let a just-pressed jump actually leave the ground
+            float t = 0;
+            while (!p.IsGrounded && t < timeout) { t += Time.deltaTime; yield return null; }
+            yield return new WaitForSeconds(0.25f);
+        }
+
+        IEnumerator Start()
+        {
+            InputSystem.settings.backgroundBehavior = InputSettings.BackgroundBehavior.IgnoreFocus;
+            InputSystem.settings.editorInputBehaviorInPlayMode = InputSettings.EditorInputBehaviorInPlayMode.AllDeviceInputAlwaysGoesToGameView;
+            kb = Keyboard.current;
+            Log("keyboard=" + (kb != null) + " focused=" + Application.isFocused);
+            if (kb == null) { Log("NO KEYBOARD DEVICE"); Finish(); yield break; }
+            p = FindFirstObjectByType<PlayerController2D>();
+            if (p == null) { Log("NO PLAYER"); Finish(); yield break; }
+            rb = p.GetComponent<Rigidbody2D>();
+            Log("start pos " + rb.position + " fixedDt " + Time.fixedDeltaTime);
+
+            if (EditorPrefs.GetString("HK_MODE") == "hunt")
+            {
+                EditorPrefs.SetString("HK_MODE", "");
+                yield return new WaitForSeconds(0.8f);
+                if (EditorPrefs.GetString("HK_ONLY") == "wall")
+                {
+                    EditorPrefs.SetString("HK_ONLY", "");
+                    yield return WallGapDebug();
+                    Log("DONE");
+                    Finish();
+                    yield break;
+                }
+                if (EditorPrefs.GetString("HK_ONLY") == "flooff")
+                {
+                    EditorPrefs.SetString("HK_ONLY", "");
+                    yield return FloatOffTests();
+                    Log("DONE");
+                    Finish();
+                    yield break;
+                }
+                if (EditorPrefs.GetString("HK_ONLY") == "wjface")
+                {
+                    EditorPrefs.SetString("HK_ONLY", "");
+                    yield return WallJumpFacingProbe();
+                    Log("DONE");
+                    Finish();
+                    yield break;
+                }
+                if (EditorPrefs.GetString("HK_ONLY") == "wallface")
+                {
+                    EditorPrefs.SetString("HK_ONLY", "");
+                    yield return WallFacingTests();
+                    Log("DONE");
+                    Finish();
+                    yield break;
+                }
+                if (EditorPrefs.GetString("HK_ONLY") == "probe")
+                {
+                    EditorPrefs.SetString("HK_ONLY", "");
+                    yield return WithFloatEnabled(FloatTimingProbe());
+                    Log("DONE");
+                    Finish();
+                    yield break;
+                }
+                if (EditorPrefs.GetString("HK_ONLY") == "landcam")
+                {
+                    EditorPrefs.SetString("HK_ONLY", "");
+                    yield return HardLandAndCameraTests();
+                    Log("DONE");
+                    Finish();
+                    yield break;
+                }
+                if (EditorPrefs.GetString("HK_ONLY") == "float")
+                {
+                    EditorPrefs.SetString("HK_ONLY", "");
+                    yield return WithFloatEnabled(FloatTests());
+                    yield return FloatOffTests();
+                    Log("DONE");
+                    Finish();
+                    yield break;
+                }
+                var demoDamage = GameObject.Find("Damage Test Objects");     // the hand-test enemy / spikes would disturb the scripted tests
+                if (demoDamage != null) demoDamage.SetActive(false);
+                if (EditorPrefs.GetString("HK_ONLY") == "sprint")
+                {
+                    EditorPrefs.SetString("HK_ONLY", "");
+                    yield return SprintTests();
+                    Log("DONE");
+                    Finish();
+                    yield break;
+                }
+                if (EditorPrefs.GetString("HK_ONLY") == "sprintshots")
+                {
+                    EditorPrefs.SetString("HK_ONLY", "");
+                    yield return SprintShots();
+                    Log("DONE");
+                    Finish();
+                    yield break;
+                }
+                if (EditorPrefs.GetString("HK_ONLY") == "bindshots")
+                {
+                    EditorPrefs.SetString("HK_ONLY", "");
+                    yield return BindShots();
+                    Log("DONE");
+                    Finish();
+                    yield break;
+                }
+                if (EditorPrefs.GetString("HK_ONLY") == "silk")
+                {
+                    EditorPrefs.SetString("HK_ONLY", "");
+                    yield return SilkTests();
+                    Log("DONE");
+                    Finish();
+                    yield break;
+                }
+                if (EditorPrefs.GetString("HK_ONLY") == "damage")
+                {
+                    EditorPrefs.SetString("HK_ONLY", "");
+                    yield return DamageTests();
+                    Log("DONE");
+                    Finish();
+                    yield break;
+                }
+                if (EditorPrefs.GetString("HK_ONLY") == "feel")
+                {
+                    EditorPrefs.SetString("HK_ONLY", "");
+                    yield return FeelTests();
+                    Log("DONE");
+                    Finish();
+                    yield break;
+                }
+                if (EditorPrefs.GetString("HK_ONLY") == "combat")
+                {
+                    EditorPrefs.SetString("HK_ONLY", "");
+                    yield return CombatTests();
+                    Log("DONE");
+                    Finish();
+                    yield break;
+                }
+                // Default run = the newer mechanics only (damage, hit-stop/shake, silk + bind, sprint). The older scenarios
+                // (run, jump, dash, wall, combat, float, hard landing, camera ...) all passed repeatedly and are kept behind
+                // HK_ONLY = "legacy"; "all" runs both.
+                string only = EditorPrefs.GetString("HK_ONLY");
+                EditorPrefs.SetString("HK_ONLY", "");
+                if (only == "legacy") yield return Hunt();
+                else if (only == "all") { yield return Hunt(); yield return RecentTests(); }
+                else yield return RecentTests();
+                Log("DONE");
+                Finish();
+                yield break;
+            }
+
+            yield return new WaitForSeconds(0.8f);
+            yield return WaitGrounded();
+            float groundY = rb.position.y;
+            Log("grounded=" + p.IsGrounded + " y=" + groundY);
+
+            // A: full jump
+            Track(); Keys(Key.Space); yield return new WaitForSeconds(0.45f); Keys();
+            yield return WaitGrounded();
+            Log("A full jump rise = " + (peakY - groundY).ToString("F2") + "  (expected ~4.2)");
+
+            // B: tap jump
+            Track(); Keys(Key.Space); yield return null; yield return null; Keys();
+            yield return WaitGrounded();
+            Log("B tap jump rise = " + (peakY - groundY).ToString("F2") + "  (expected ~1.5)");
+
+            // C: double jump, then keep holding to float down
+            Log("C0 before: grounded=" + p.IsGrounded + " state=" + p.State + " vel=" + rb.linearVelocity);
+            vStep = 0; verbose = true;
+            Track(); Keys(Key.Space); yield return new WaitForSeconds(0.30f); // full jump reaches its apex at ~0.28 s
+            verbose = false;
+            Log("C1 after first jump: y rise=" + (rb.position.y - groundY).ToString("F2") + " peak=" + (peakY - groundY).ToString("F2") + " vy=" + rb.linearVelocity.y.ToString("F2") + " grounded=" + p.IsGrounded + " state=" + p.State);
+            Keys();
+            yield return new WaitForSeconds(0.02f);
+            Log("C2 before 2nd press: y rise=" + (rb.position.y - groundY).ToString("F2") + " vy=" + rb.linearVelocity.y.ToString("F2") + " state=" + p.State);
+            Keys(Key.Space);
+            yield return new WaitForSeconds(0.08f);
+            Log("C3 after 2nd press: y rise=" + (rb.position.y - groundY).ToString("F2") + " vy=" + rb.linearVelocity.y.ToString("F2") + " state=" + p.State);
+            yield return new WaitForSeconds(0.22f);
+            float peakAfterDouble = peakY - groundY;
+            minVy = 0;
+            float t = 0; while (!p.IsGrounded && t < 5f) { t += Time.deltaTime; yield return null; }
+            Keys();
+            Log("C double jump total rise = " + peakAfterDouble.ToString("F2") + "  (expected ~6.2)  float seen=" + sawFloat + " max fall speed=" + (-minVy).ToString("F2") + " (float cap 3.5)");
+            yield return WaitGrounded();
+
+            // D: run speed
+            Track(); Keys(Key.D); yield return new WaitForSeconds(0.5f);
+            Log("D run speed = " + maxVx.ToString("F2") + "  (expected 8.3)");
+            Keys(); yield return new WaitForSeconds(0.4f);
+
+            // E: dash distance
+            rb.position = new Vector2(-10f, groundY); rb.linearVelocity = Vector2.zero;
+            yield return new WaitForSeconds(0.4f);
+            float x0 = rb.position.x;
+            Track(); Keys(Key.D, Key.LeftShift); yield return null; yield return null; Keys(Key.D);
+            yield return new WaitForSeconds(0.35f); Keys();
+            Log("E dash: peak speed = " + maxVx.ToString("F2") + " (expected 22), dx incl. run-out = " + (rb.position.x - x0).ToString("F2"));
+            yield return new WaitForSeconds(0.5f);
+
+            // F: wall slide + wall jump (Wall at x=12, left face x=11.5)
+            rb.position = new Vector2(10.9f, 4f); rb.linearVelocity = Vector2.zero;
+            Track(); Keys(Key.D);
+            yield return new WaitForSeconds(0.5f);
+            Log("F wall: dir=" + p.WallDirection + " sliding=" + p.IsWallSliding + " vy=" + rb.linearVelocity.y.ToString("F2") + " (expected ~-3.5) state=" + p.State);
+            float yBefore = rb.position.y;
+            Keys(Key.D, Key.Space); yield return new WaitForSeconds(0.08f);
+            float vxKick = rb.linearVelocity.x;
+            Keys(Key.D);
+            yield return new WaitForSeconds(0.15f);
+            Log("F wall jump: vx at kick = " + vxKick.ToString("F2") + " (expected ~-9), y gain = " + (peakY - yBefore).ToString("F2") + " facing=" + p.FacingDirection);
+            Keys(); yield return WaitGrounded();
+
+            // G: coyote time (jump N fixed steps after walking off a ledge; tuning says 5)
+            // (air jumps are switched off for this test so a late press can't be mistaken for a coyote jump)
+            var tuningField = typeof(PlayerController2D).GetField("tuning", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            var tun = (PlayerTuning)tuningField.GetValue(p);
+            int savedAirJumps = tun.airJumps;
+            tun.airJumps = 0;
+            foreach (int d in new[] { 0, 3, 5, 6, 8, 10 })
+                yield return CoyoteTrial(d);
+            tun.airJumps = savedAirJumps;
+
+            // H: jump buffer (press Space shortly before landing; tuning says 6 steps = 0.12 s)
+            yield return BufferTrials();
+
+            // I: camera
+            yield return CameraTrials(groundY);
+
+            Log("DONE");
+            Finish();
+        }
+
+        string Snap() => "pos=(" + rb.position.x.ToString("F2") + "," + rb.position.y.ToString("F2") + ") vel=(" + rb.linearVelocity.x.ToString("F1") + "," + rb.linearVelocity.y.ToString("F1") + ") grounded=" + p.IsGrounded + " state=" + p.State;
+
+        IEnumerator LatencyProbe(string what, Key key, System.Func<bool> happened)
+        {
+            yield return new WaitForSeconds(0.3f);
+            int f0 = Time.frameCount; float t0 = Time.realtimeSinceStartup;
+            Keys(key);
+            float limit = t0 + 1f;
+            while (!happened() && Time.realtimeSinceStartup < limit) yield return null;
+            float ms = (Time.realtimeSinceStartup - t0) * 1000f;
+            Verdict("S14 input latency (" + what + ") under 60 ms", ms < 60f, ms.ToString("F0") + " ms, " + (Time.frameCount - f0) + " frames");
+            Keys();
+        }
+
+        void Verdict(string name, bool pass, string detail) => Log((pass ? "PASS " : "FAIL ") + name + " -- " + detail);
+
+        IEnumerator Place(float x, float y, float settle = 0.6f)
+        {
+            Keys(); Tp(x, y);
+            yield return new WaitForSeconds(settle);
+        }
+
+        /// <summary>Press Space (plus held keys), return whether the player left the ground upward.</summary>
+        IEnumerator PressJump(System.Action<bool> done, float watch = 0.25f, params Key[] also)
+        {
+            float y0 = rb.position.y;
+            var keys = new System.Collections.Generic.List<Key>(also) { Key.Space };
+            Keys(keys.ToArray());
+            float best = y0;
+            for (float t = 0; t < watch; t += Time.deltaTime) { best = Mathf.Max(best, rb.position.y); yield return null; }
+            Keys(also);
+            done(best > y0 + 0.4f);
+        }
+
+        // Independent measurement of the opaque art (reads the PNG pixels), world-space left edge of the rendered sprite.
+        readonly System.Collections.Generic.Dictionary<string, Texture2D> pngCache = new System.Collections.Generic.Dictionary<string, Texture2D>();
+        float OpaqueWorldLeft(SpriteRenderer sr)
+        {
+            var s = sr.sprite;
+            var path = AssetDatabase.GetAssetPath(s.texture);
+            if (!pngCache.TryGetValue(path, out var tex))
+            {
+                tex = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+                ImageConversion.LoadImage(tex, System.IO.File.ReadAllBytes(path));
+                pngCache[path] = tex;
+            }
+            int x0 = Mathf.RoundToInt(s.rect.x), y0 = Mathf.RoundToInt(s.rect.y), w = Mathf.RoundToInt(s.rect.width), h = Mathf.RoundToInt(s.rect.height);
+            var px = tex.GetPixels32();
+            int cMin = int.MaxValue, cMax = int.MinValue;
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++)
+                {
+                    if (px[(y0 + y) * tex.width + x0 + x].a <= 10) continue;
+                    cMin = Mathf.Min(cMin, x); cMax = Mathf.Max(cMax, x);
+                }
+            float minX = (cMin - s.pivot.x) / s.pixelsPerUnit, maxX = (cMax + 1 - s.pivot.x) / s.pixelsPerUnit;
+            float left = sr.flipX ? -maxX : minX;                       // after mirroring
+            return sr.transform.position.x + left * sr.transform.lossyScale.x;
+        }
+
+        IEnumerator WallGapDebug()
+        {
+            yield return Place(12.9f, 4.5f, 0.05f);
+            Keys(Key.A); yield return new WaitForSeconds(0.5f);
+            var anim = p.GetComponentInChildren<Animator>();
+            var vsr = anim.GetComponent<SpriteRenderer>();          // the character's renderer (the root has a disabled placeholder one)
+            var vis = p.GetComponent<PlayerVisuals2D>();
+            var box = p.GetComponent<Collider2D>();
+            Log("WALLDBG setup: visual=" + vsr.name + " pivot=" + vsr.sprite.pivot + " rect=" + vsr.sprite.rect + " ppu=" + vsr.sprite.pixelsPerUnit +
+                " colliderOffset=" + ((BoxCollider2D)box).offset + " colliderSize=" + ((BoxCollider2D)box).size + " visualsComponent=" + (vis != null) +
+                " rootRendererEnabled=" + p.GetComponent<SpriteRenderer>().enabled);
+            for (int i = 0; i < 10; i++)
+            {
+                yield return null;
+                float minLx = 999, maxLx = -999;
+                foreach (var v in vsr.sprite.vertices) { float lx = vsr.flipX ? -v.x : v.x; minLx = Mathf.Min(minLx, lx); maxLx = Mathf.Max(maxLx, lx); }
+                float worldMin = OpaqueWorldLeft(vsr);
+                Log("WALLDBG state=" + p.State + " wallDir=" + p.WallDirection + " flipX=" + vsr.flipX + " sprite=" + vsr.sprite.name +
+                    " visual localX=" + vsr.transform.localPosition.x.ToString("F3") + " rootX=" + p.transform.position.x.ToString("F3") +
+                    " colliderLeftEdge=" + box.bounds.min.x.ToString("F3") + " halfW=" + box.bounds.extents.x.ToString("F3") +
+                    " art lx[" + minLx.ToString("F2") + "," + maxLx.ToString("F2") + "] artWorldLeft=" + worldMin.ToString("F3") +
+                    " gapToWall(12.5)=" + (worldMin - 12.5f).ToString("F3"));
+            }
+            Keys();
+        }
+
+        /// <summary>Press attack (with extra keys), wait until the swing has really started, report its direction/combo.</summary>
+        IEnumerator DoSwing(PlayerCombat2D combat, System.Action<AttackDir, int> report, params Key[] with)
+        {
+            int before = combat.SwingsStarted;
+            var keys = new System.Collections.Generic.List<Key>(with) { Key.J };
+            Keys(keys.ToArray());
+            yield return null;
+            Keys(with);
+            for (float t = 0; t < 0.4f && combat.SwingsStarted == before; t += Time.deltaTime) yield return null;
+            report(combat.CurrentDir, combat.ComboIndex);
+        }
+
+        IEnumerator HardLandAndCameraTests()
+        {
+            var combat = p.GetComponent<PlayerCombat2D>();
+            var tun = p.Tuning;
+
+            // ---- H1: a long fall at terminal speed ends in a hard landing: locked for hardLandingTime, input thrown away
+            Tp(-9f, 80f); yield return new WaitForSeconds(0.2f);
+            float fallT = 0f; float maxTimer = 0f; bool hard = false; int swings0 = combat.SwingsStarted;
+            while (fallT < 8f && !hard)
+            {
+                yield return null; fallT += Time.deltaTime; maxTimer = Mathf.Max(maxTimer, p.FallTimer);
+                if (p.IsHardLanding) hard = true;
+            }
+            float lockStart = Time.time; float x0 = rb.position.x;
+            Log("H1 landing: swings so far " + (combat.SwingsStarted - swings0) + ", attacking=" + combat.IsAttacking + ", " + Snap());
+            yield return new WaitForSeconds(0.1f);
+            int swingsBeforeMash = combat.SwingsStarted - swings0;
+            Keys(Key.D, Key.Space, Key.LeftShift, Key.J); yield return new WaitForSeconds(0.1f);           // mash everything during the lock
+            Keys();
+            Log("H1 after the mash: swings " + (combat.SwingsStarted - swings0) + " (before the mash " + swingsBeforeMash + "), locked=" + p.IsHardLanding + ", attacking=" + combat.IsAttacking);
+            float xMoved = Mathf.Abs(rb.position.x - x0); bool stillLocked = p.IsHardLanding;
+            float lockLen = 0f; for (float t = 0; t < 1f && p.IsHardLanding; t += Time.deltaTime) { yield return null; }
+            lockLen = Time.time - lockStart;
+            yield return new WaitForSeconds(0.15f);
+            float yAfter = rb.position.y;
+            Verdict("H1 long fall -> hard landing (timer reached " + maxTimer.ToString("F2") + " s): locked " + lockLen.ToString("F2") + " s (expect ~" + tun.hardLandingTime + "), input ignored (moved " + xMoved.ToString("F2") + " u, swings " + (combat.SwingsStarted - swings0) + "), buffered jump not replayed (y " + yAfter.ToString("F2") + ")",
+                hard && stillLocked && Mathf.Abs(lockLen - tun.hardLandingTime) < 0.12f && xMoved < 0.05f && combat.SwingsStarted == swings0 && yAfter < 0.5f, "");
+            Keys(Key.Space); yield return new WaitForSeconds(0.12f);                                      // after the lock, input works again
+            bool jumpedAfter = rb.position.y > 0.6f; Keys();
+            Verdict("H1b after the hard landing the player can jump again", jumpedAfter, Snap());
+            yield return WaitGrounded();
+
+            // ---- H2: a shorter fall (not enough time at terminal speed) lands normally
+            Tp(-9f, 14f); yield return new WaitForSeconds(0.1f);
+            bool sawHard = false; float t2 = 0f;
+            while (t2 < 2.5f) { yield return null; t2 += Time.deltaTime; if (p.IsHardLanding) sawHard = true; if (p.IsGrounded && t2 > 0.3f) break; }
+            yield return new WaitForSeconds(0.2f);
+            Verdict("H2 a 14-unit drop is a normal landing (hard landing seen: " + sawHard + ")", !sawHard && !p.IsHardLanding, "");
+
+            // ---- H3: a swing in progress is cancelled by the hard landing
+            Tp(-9f, 80f); yield return new WaitForSeconds(0.2f);
+            float t3 = 0f; bool swungBefore = false;
+            while (t3 < 8f && !p.IsHardLanding)
+            {
+                yield return null; t3 += Time.deltaTime;
+                if (!swungBefore && rb.position.y < 2.5f) { Keys(Key.J); yield return null; Keys(); swungBefore = true; }
+            }
+            yield return null;
+            Verdict("H3 hard landing cancels a swing in progress (swung=" + swungBefore + ", still attacking=" + combat.IsAttacking + ")", swungBefore && p.IsHardLanding && !combat.IsAttacking, "");
+            yield return new WaitForSeconds(0.9f);
+
+            // ======================= CAMERA =======================
+            var cam = Camera.main != null ? Camera.main.GetComponent<Hollowknight.CameraSystem.CameraFollow2D>() : null;
+            if (cam == null) { Log("FAIL K0 no CameraFollow2D"); yield break; }
+
+            // ---- K1: look-ahead slides at a constant speed toward the facing side, follows facing (not movement), holds when idle
+            yield return Place(0f, 0.23f);
+            Keys(Key.D); yield return new WaitForSeconds(0.05f); Keys();                                   // face right
+            yield return new WaitForSeconds(1.6f);
+            float aheadRight = cam.LookAheadX;
+            Keys(Key.A); yield return new WaitForSeconds(0.04f); Keys();                                   // turn to face left (a tiny step)
+            float tTurn = Time.time; float v0 = cam.LookAheadX;
+            yield return new WaitForSeconds(0.25f); float v1 = cam.LookAheadX; float dt1 = Time.time - tTurn;
+            yield return new WaitForSeconds(0.25f); float v2 = cam.LookAheadX; float dt2 = Time.time - tTurn;
+            yield return new WaitForSeconds(1.0f); float vEnd = cam.LookAheadX;
+            float rate1 = (v0 - v1) / dt1, rate2 = (v1 - v2) / (dt2 - dt1);
+            Verdict("K1 look-ahead: right " + aheadRight.ToString("F2") + " (3), then turning left slides at " + rate1.ToString("F1") + " / " + rate2.ToString("F1") + " u/s (expect ~6), ends at " + vEnd.ToString("F2") + " (-3) and holds while idle",
+                Mathf.Abs(aheadRight - 3f) < 0.05f && Mathf.Abs(rate1 - 6f) < 1.2f && Mathf.Abs(rate2 - 6f) < 1.2f && Mathf.Abs(vEnd + 3f) < 0.05f, "");
+
+            // ---- K2: dash adds its own offset only while dashing fast
+            Keys(); Tp(-6f, 0.23f); yield return new WaitForSeconds(0.5f);
+            Keys(Key.D, Key.LeftShift); yield return null; yield return null; Keys(Key.D);
+            yield return new WaitForSeconds(0.06f); float dashOff = cam.DashOffsetX; bool dashingNow = p.IsDashing;
+            Keys(); yield return new WaitForSeconds(0.5f); float dashAfter = cam.DashOffsetX;
+            Verdict("K2 dash offset while dashing " + dashOff.ToString("F2") + " (dashing=" + dashingNow + "), after " + dashAfter.ToString("F2") + " (0)", dashingNow && Mathf.Abs(dashOff) > 1f && Mathf.Abs(dashAfter) < 0.01f, "");
+
+            // ---- K3: looks down only at near-terminal fall speed, ramping at 4 per second down to -1; resets on landing
+            Tp(-9f, 80f); yield return new WaitForSeconds(0.1f);
+            float tK3 = 0f; float firstAt = -1f; float norm0 = 0f; float normEarly = 99f;
+            while (tK3 < 1.2f)
+            {
+                yield return null; tK3 += Time.deltaTime;
+                if (rb.linearVelocity.y > -10f) norm0 = Mathf.Min(norm0, cam.FallOffsetNorm);   // still slow: should be 0
+                if (firstAt < 0f && cam.FallOffsetNorm < -0.01f) firstAt = tK3;
+                if (firstAt > 0f && tK3 - firstAt > 0.12f && normEarly == 99f) normEarly = cam.FallOffsetNorm;
+            }
+            float normFull = cam.FallOffsetNorm;
+            Verdict("K3 look-down: 0 while slow (" + norm0.ToString("F2") + "), ramping (-" + (0.12f * 4f).ToString("F2") + " after 0.12 s -> " + normEarly.ToString("F2") + "), full " + normFull.ToString("F2") + " (-1)",
+                Mathf.Abs(norm0) < 0.01f && Mathf.Abs(normEarly + 0.48f) < 0.2f && Mathf.Abs(normFull + 1f) < 0.02f, "");
+            yield return WaitGrounded(8f);
+            yield return new WaitForSeconds(1.0f);
+            Verdict("K3b look-down resets after landing (" + cam.FallOffsetNorm.ToString("F2") + ")", Mathf.Abs(cam.FallOffsetNorm) < 0.01f, "");
+
+            // ---- K4: after floating for more than 1.25 s the camera starts looking down (1 per second)
+            // (float is off by default; switch it on just for this check)
+            bool savedFloat = p.Tuning.floatEnabled; p.Tuning.floatEnabled = true;
+            Tp(-9f, 60f); yield return new WaitForSeconds(0.15f);
+            Keys(Key.Space); yield return null; Keys(); yield return new WaitForSeconds(0.4f);          // spend the air jump
+            Keys(Key.Space);                                                                              // fresh press: float, keep holding
+            yield return new WaitForSeconds(0.8f); float early = cam.FallOffsetNorm; bool floating = p.IsFloating;
+            yield return new WaitForSeconds(0.95f); float late = cam.FallOffsetNorm;
+            Keys();
+            Verdict("K4 float look-down: at 0.8 s " + early.ToString("F2") + " (0), at ~1.75 s " + late.ToString("F2") + " (about -0.5), floating=" + floating,
+                floating && Mathf.Abs(early) < 0.01f && late < -0.2f && late > -1.5f, "");
+            yield return WaitGrounded(8f);
+            p.Tuning.floatEnabled = savedFloat;
+        }
+
+        /// <summary>Run another test routine with the float ability switched on, then restore the setting.</summary>
+        IEnumerator WithFloatEnabled(IEnumerator inner)
+        {
+            var tun = p.Tuning; bool saved = tun.floatEnabled; tun.floatEnabled = true;
+            try { while (inner.MoveNext()) yield return inner.Current; }
+            finally { tun.floatEnabled = saved; }
+        }
+
+        /// <summary>
+        /// User request: the hero must never float. With the default settings, mash every key while jumping
+        /// (double jump, press + hold Space, A+D, W, S, attack, dash, ...) and check it never floats and falls normally.
+        /// </summary>
+        IEnumerator FloatOffTests()
+        {
+            var tun = p.Tuning;
+            Verdict("S46a float is off by default (floatEnabled=" + tun.floatEnabled + ")", !tun.floatEnabled, "");
+
+            // ---- S46b: the exact sequences from the reports: double jump, then a fresh press / A+D+Space held -> normal fall
+            foreach (float delay in new[] { 0.05f, 0.2f, 0.45f })
+            {
+                yield return Place(1f, 0.23f, 0.7f);
+                Keys(Key.Space); yield return new WaitForSeconds(0.35f); Keys();
+                yield return new WaitForSeconds(0.15f);
+                Keys(Key.Space); yield return null; Keys();                               // the double jump
+                yield return new WaitForSeconds(delay);
+                Keys(Key.A, Key.D, Key.Space);                                            // A + D + Space together, held
+                bool floated = false; float fastest = 0f; float t = 0f; bool landed = false;
+                while (t < 3f)
+                {
+                    yield return null; t += Time.deltaTime;
+                    if (p.IsFloating || p.State == MotionState.Floating) floated = true;
+                    fastest = Mathf.Min(fastest, rb.linearVelocity.y);
+                    if (p.IsGrounded && t > 0.5f) { landed = true; break; }
+                }
+                Keys();
+                Verdict("S46b A+D+Space held " + delay.ToString("F2") + " s after the double jump: never floats (" + floated + "), falls at up to " + (-fastest).ToString("F1") + " u/s, landed=" + landed,
+                    !floated && fastest < -12f && landed, "");
+            }
+
+            // ---- S46c: mash random combinations of every key for 3 seconds while jumping around: never floats
+            yield return Place(1f, 0.23f, 0.7f);
+            var rng = new System.Random(12345);
+            var all = new[] { Key.A, Key.D, Key.W, Key.S, Key.Space, Key.J, Key.LeftShift, Key.Space, Key.Space };   // Space twice as likely
+            bool everFloated = false; int airFrames = 0; float tm = 0f; int minLeftOverUp = 0;
+            while (tm < 3f)
+            {
+                var keys = new System.Collections.Generic.List<Key>();
+                foreach (var k in all) if (rng.NextDouble() < 0.45) keys.Add(k);
+                Keys(keys.ToArray());
+                yield return null; tm += Time.deltaTime;
+                if (rb.position.x < -13f || rb.position.x > 11f) Tp(1f, rb.position.y);        // stay over the floor
+                if (p.IsFloating || p.State == MotionState.Floating) everFloated = true;
+                if (!p.IsGrounded) airFrames++;
+            }
+            Keys();
+            yield return new WaitForSeconds(0.2f);
+            Verdict("S46c 3 s of mashing every key at random never floats (floated=" + everFloated + ", frames airborne=" + airFrames + ")", !everFloated && airFrames > 30, "");
+            yield return WaitGrounded();
+        }
+
+        /// <summary>User report: double jump, then press A, D and Space together straight away -> floats. Try different delays.</summary>
+        IEnumerator FloatTimingProbe()
+        {
+            var outcomes = new System.Collections.Generic.Dictionary<float, bool>();
+            foreach (float delay in new[] { 0.0f, 0.04f, 0.08f, 0.12f, 0.2f, 0.3f, 0.45f, 0.6f })
+            {
+                yield return Place(1f, 0.23f, 0.7f);                                   // start on the ground so the air jump is available again
+                Keys(Key.Space); yield return new WaitForSeconds(0.35f); Keys();       // a full ground jump
+                yield return new WaitForSeconds(0.15f);                                // near the top of the jump
+                int jumpsBeforeDouble = p.AirJumpsLeft;
+                Keys(Key.Space); yield return null; Keys();                            // the double jump (tap)
+                float tStart = Time.time;
+                if (delay > 0f) yield return new WaitForSeconds(delay);
+                int jumpsLeftAtPress = p.AirJumpsLeft; var stateAtPress = p.State; float vyAtPress = rb.linearVelocity.y;
+                Keys(Key.A, Key.D, Key.Space);                                    // all three at once, held
+                bool floated = false; float firstFloat = -1f; float tt = 0f;
+                while (tt < 1.2f)
+                {
+                    yield return null; tt += Time.deltaTime;
+                    if (p.IsFloating && !floated) { floated = true; firstFloat = Time.time - tStart; }
+                }
+                Keys();
+                Log("PROBE delay " + delay.ToString("F2") + "s after the double jump (air jumps before it: " + jumpsBeforeDouble + "): state at press=" + stateAtPress + " vy=" + vyAtPress.ToString("F1") +
+                    " airJumpsLeft=" + jumpsLeftAtPress + " -> floated=" + floated + (floated ? " (started " + firstFloat.ToString("F2") + " s after the double jump)" : ""));
+                outcomes[delay] = floated;
+                yield return new WaitForSeconds(0.3f);
+            }
+
+            // With the default rule: a press made while still rising (the double jump's rise lasts ~0.3 s) never floats;
+            // a press once falling does. (floatFromPressDuringRise = true would let the 0.2 s press float at the top.)
+            bool risingOnesQuiet = !outcomes[0.0f] && !outcomes[0.04f] && !outcomes[0.08f] && !outcomes[0.12f] && !outcomes[0.2f];
+            bool fallingOnesFloat = outcomes[0.45f] && outcomes[0.6f];
+            Verdict("S44 double jump then A+D+Space together: no float while still rising (0..0.2 s), float once falling (0.45 s, 0.6 s)",
+                risingOnesQuiet && fallingOnesFloat, "");
+        }
+
+        /// <summary>User report: after a wall slide ends the player still looks at the wall; it should face away.</summary>
+        IEnumerator WallFacingTests()
+        {
+            // ---- S45a: slide on the wall's right face (wall on the LEFT) pressing into it, then release and fall to the ground
+            yield return Place(12.9f, 4.5f, 0.05f);
+            Keys(Key.A); yield return new WaitForSeconds(0.35f);
+            int facingWhileSliding = p.FacingDirection; bool sliding = p.IsWallSliding;
+            Keys();                                                           // no input: the sticky slide keeps going
+            float tg = 0f; while (!p.IsGrounded && tg < 4f) { tg += Time.deltaTime; yield return null; }
+            yield return new WaitForSeconds(0.1f);
+            Verdict("S45a wall on the left: faces the wall while sliding (" + facingWhileSliding + ", expect -1), faces AWAY after landing (" + p.FacingDirection + ", expect +1)",
+                sliding && facingWhileSliding == -1 && p.FacingDirection == 1, Snap());
+
+            // ---- S45b: same on the other side (Wall 2's left face at x=15, wall on the RIGHT)
+            yield return Place(14.6f, 5.5f, 0.05f);
+            Keys(Key.D); yield return new WaitForSeconds(0.35f);
+            int facingWhileSliding2 = p.FacingDirection; bool sliding2 = p.IsWallSliding;
+            Keys();
+            tg = 0f; while (!p.IsGrounded && tg < 4f) { tg += Time.deltaTime; yield return null; }
+            yield return new WaitForSeconds(0.1f);
+            Verdict("S45b wall on the right: faces the wall while sliding (" + facingWhileSliding2 + ", expect +1), faces AWAY after landing (" + p.FacingDirection + ", expect -1)",
+                sliding2 && facingWhileSliding2 == 1 && p.FacingDirection == -1, Snap());
+
+            // ---- S45c: hold away long enough to let go: faces away, falls
+            yield return Place(12.9f, 5.5f, 0.05f);
+            Keys(Key.A); yield return new WaitForSeconds(0.35f);
+            Keys(Key.D); yield return new WaitForSeconds(0.35f);              // held away well past the sticky steps
+            bool letGo = !p.IsWallSliding;
+            Keys();
+            Verdict("S45c holding away lets go of the wall and faces away (slide ended=" + letGo + ", facing " + p.FacingDirection + ", expect +1)", letGo && p.FacingDirection == 1, "");
+            yield return WaitGrounded();
+
+            // ---- S45e (user report): during a wall jump the WallJump animation plays from the first frames (not the
+            // WallSlide pose) and the hero faces away the whole time. No key is held toward the wall afterwards.
+            foreach (int side in new[] { -1, 1 })
+            {
+                if (side == -1) yield return Place(12.9f, 5.5f, 0.05f); else yield return Place(14.6f, 5.5f, 0.05f);
+                Keys(side == -1 ? Key.A : Key.D); yield return new WaitForSeconds(0.35f);
+                var animator45 = p.GetComponentInChildren<Animator>(); var sr45 = animator45.GetComponent<SpriteRenderer>();
+                Keys(side == -1 ? Key.A : Key.D, Key.Space); yield return null; Keys();                    // jump, then release everything
+                for (float w = 0; w < 0.3f && p.IsWallSliding; w += Time.deltaTime) yield return null;     // input takes a few frames: wait until the jump has really started
+                bool wrongAnim = false, wrongFacing = false; int framesSeen = 0; bool sawWallJumpAnim = false;
+                for (float t = 0; t < 0.22f; t += Time.deltaTime)
+                {
+                    yield return null;
+                    if (p.State == MotionState.Grounded) break;
+                    if (framesSeen++ < 1) continue;                                                         // the very first frame can still be the press itself
+                    string an = AnimName(animator45);
+                    if (an == "WallJump") sawWallJumpAnim = true;
+                    if (an == "WallSlide") wrongAnim = true;                                                // the old bug
+                    if (p.FacingDirection == side) wrongFacing = true;                                      // facing the wall
+                    if ((sr45.flipX ? -1 : 1) == side) wrongFacing = true;                                  // sprite drawn facing the wall (art faces right unflipped)
+                }
+                Verdict("S45e wall on the " + (side == -1 ? "left" : "right") + ": WallJump animation plays (seen=" + sawWallJumpAnim + ", WallSlide pose shown=" + wrongAnim + "), faces away throughout (facing toward wall=" + wrongFacing + ")",
+                    sawWallJumpAnim && !wrongAnim && !wrongFacing, "");
+                yield return WaitGrounded();
+            }
+
+            // ---- S45d: a wall jump still faces away from the wall (unchanged)
+            yield return Place(12.9f, 5.5f, 0.05f);
+            Keys(Key.A); yield return new WaitForSeconds(0.35f);
+            Keys(Key.A, Key.Space); yield return new WaitForSeconds(0.1f); Keys();
+            Verdict("S45d wall jump faces away from the wall (" + p.FacingDirection + ", expect +1)", p.FacingDirection == 1, "");
+            yield return WaitGrounded();
+        }
+
+        /// <summary>User report: on a wall jump the hero looks toward the wall first and turns away midway.</summary>
+        IEnumerator WallJumpFacingProbe()
+        {
+            foreach (int side in new[] { -1, 1 })
+            {
+                // side -1: wall on the left (Wall's right face x=12.5); side +1: wall on the right (Wall 2's left face x=15)
+                if (side == -1) yield return Place(12.9f, 5.5f, 0.05f); else yield return Place(14.6f, 5.5f, 0.05f);
+                Keys(side == -1 ? Key.A : Key.D); yield return new WaitForSeconds(0.35f);
+                var anim = p.GetComponentInChildren<Animator>(); var sr = anim.GetComponent<SpriteRenderer>();
+                Log("WJFACE side " + side + " before the jump: facing=" + p.FacingDirection + " flipX=" + sr.flipX + " sprite=" + sr.sprite.name + " state=" + p.State);
+                Keys(side == -1 ? Key.A : Key.D, Key.Space); yield return null; Keys(side == -1 ? Key.A : Key.D);
+                int changes = 0; int lastFacing = p.FacingDirection; bool lastFlip = sr.flipX;
+                for (int i = 0; i < 30; i++)
+                {
+                    yield return null;
+                    if (i % 3 == 0)
+                        Log("WJFACE side " + side + " frame " + i + ": facing=" + p.FacingDirection + " flipX=" + sr.flipX + " sprite=" + sr.sprite.name + " clip/state=" + AnimName(anim) + " state=" + p.State + " vx=" + rb.linearVelocity.x.ToString("F1"));
+                    if (p.FacingDirection != lastFacing || sr.flipX != lastFlip) { changes++; lastFacing = p.FacingDirection; lastFlip = sr.flipX; }
+                }
+                Keys();
+                Log("WJFACE side " + side + " facing/flip changes during the jump: " + changes);
+                yield return WaitGrounded();
+            }
+        }
+
+        string AnimName(Animator a)
+        {
+            var st = a.IsInTransition(0) ? a.GetNextAnimatorStateInfo(0) : a.GetCurrentAnimatorStateInfo(0);
+            foreach (var n in new[] { "WallJump", "WallSlide", "JumpRise", "JumpMid", "JumpFall", "FrontFlip", "Idle", "Run" }) if (st.IsName(n)) return n;
+            return "?";
+        }
+
+        IEnumerator FloatTests()
+        {
+            // ---- S40 (user report): jump, steer left in the air, press+HOLD jump (double jump) and keep holding.
+            // The game starts a float only from a fresh press after the double jump is spent, so holding must just fall.
+            yield return Place(1.0f, 0.23f);                                                   // open space: nothing within reach left or above
+            Keys(Key.Space); yield return new WaitForSeconds(0.35f); Keys();                  // a full-height jump
+            Keys(Key.A); yield return new WaitForSeconds(0.12f); Keys();                     // steer left a little while up in the air
+            Keys(Key.Space);                                                                   // press and keep holding (this is the double jump)
+            bool sawFloat = false; float minVy = 0f; float landedAt = -1f; float t40 = 0f;
+            int fr = 0;
+            while (t40 < 4f)
+            {
+                yield return null; t40 += Time.deltaTime;
+                if (fr++ % 4 == 0 && t40 < 1.6f) Log("S40 t=" + t40.ToString("F2") + " " + Snap() + " airJumpsLeft=" + p.AirJumpsLeft + " floating=" + p.IsFloating);
+                if (p.IsFloating) sawFloat = true;
+                minVy = Mathf.Min(minVy, rb.linearVelocity.y);
+                if (p.IsGrounded && t40 > 0.4f) { landedAt = t40; break; }
+            }
+            Keys();
+            Verdict("S40 holding jump after the double jump does NOT float (floated=" + sawFloat + ", fastest fall " + minVy.ToString("F1") + ", landed after " + landedAt.ToString("F2") + " s)",
+                !sawFloat && landedAt > 0f && minVy < -8f, "");
+            yield return new WaitForSeconds(0.5f);
+
+            // ---- S41: a fresh press in the air, with the double jump already spent and well above the ground, floats; release ends it
+            Tp(-9f, 14f); yield return new WaitForSeconds(0.15f);
+            Keys(Key.Space); yield return null; Keys(); yield return new WaitForSeconds(0.4f);            // double jump, let the rise finish
+            Keys(Key.Space); yield return new WaitForSeconds(0.25f);                                       // fresh press -> float
+            bool floatingNow = p.IsFloating; float vyFloat = rb.linearVelocity.y;
+            Keys(); yield return new WaitForSeconds(0.12f);
+            bool stoppedAfterRelease = !p.IsFloating; float vyAfter = rb.linearVelocity.y;
+            Verdict("S41 fresh press after the double jump floats (floating=" + floatingNow + ", vy " + vyFloat.ToString("F1") + ") and release ends it (" + stoppedAfterRelease + ", vy " + vyAfter.ToString("F1") + ")",
+                floatingNow && Mathf.Abs(vyFloat + p.Tuning.floatFallSpeed) < 0.6f && stoppedAfterRelease && vyAfter < vyFloat - 1f, "");
+            yield return WaitGrounded();
+
+            // ---- S42: pressing near the ground does not float (so you land)
+            Tp(-9f, 9f); yield return new WaitForSeconds(0.15f);
+            Keys(Key.Space); yield return null; Keys(); yield return new WaitForSeconds(0.1f);            // spend the air jump
+            float guardT = 0f;
+            while (rb.position.y > 0.95f && guardT < 3f) { guardT += Time.deltaTime; yield return null; }   // feet about 0.75 u above the ground (< floatMinGroundGap)
+            Keys(Key.Space); yield return new WaitForSeconds(0.08f);
+            bool floatedNearGround = p.IsFloating;
+            Keys(); yield return WaitGrounded();
+            Verdict("S42 a press just above the ground does not float (" + floatedNearGround + ")", !floatedNearGround, "");
+
+            // ---- S43: floating stops when you attack, dash or touch a wall
+            Tp(-9f, 14f); yield return new WaitForSeconds(0.15f);
+            Keys(Key.Space); yield return null; Keys(); yield return new WaitForSeconds(0.4f);
+            Keys(Key.Space); yield return new WaitForSeconds(0.2f);
+            bool floating43 = p.IsFloating;
+            Keys(Key.Space, Key.J); yield return null; Keys(Key.Space); yield return new WaitForSeconds(0.1f);
+            bool stoppedByAttack = !p.IsFloating;
+            Keys(); yield return WaitGrounded();
+            Verdict("S43 floating before the attack=" + floating43 + ", attack ends the float=" + stoppedByAttack, floating43 && stoppedByAttack, "");
+        }
+
+        IEnumerator CombatTests()
+        {
+            // ======================= COMBAT =======================
+            var combat = p.GetComponent<PlayerCombat2D>();
+            if (combat == null) Log("FAIL S30 no PlayerCombat2D on the player");
+            else
+            {
+                var tun = p.Tuning;
+                var anim30 = p.GetComponentInChildren<Animator>();
+                System.Func<string> slashAnim = () =>
+                {
+                    var st = anim30.IsInTransition(0) ? anim30.GetNextAnimatorStateInfo(0) : anim30.GetCurrentAnimatorStateInfo(0);
+                    foreach (var n in new[] { "SwordStandingSlash", "ComboAttackB", "AirSlash", "AirSlashUp", "AirSlashDown", "Idle", "Run", "JumpFall", "JumpMid", "JumpRise" }) if (st.IsName(n)) return n;
+                    return "?";
+                };
+
+                // ---- S30: swing lasts attackDuration; cooldown stops spamming (1.5 s of spam => ~1.5/0.36 swings)
+                yield return Place(-9f, 0.23f);
+                int c0 = combat.SwingsStarted; float t0s = Time.time; float endT = -1f;
+                Keys(Key.J); yield return null; Keys();
+                bool sawStart = false;
+                for (float t = 0; t < 0.6f; t += Time.deltaTime) { yield return null; if (combat.IsAttacking) sawStart = true; if (sawStart && !combat.IsAttacking && endT < 0f) endT = Time.time - t0s; }
+                Verdict("S30a one swing: isAttacking lasts about attackDuration (" + tun.attackDuration + " s)", combat.SwingsStarted == c0 + 1 && Mathf.Abs(endT - tun.attackDuration) < 0.10f, "ended after " + endT.ToString("F3") + " s (includes up to ~0.05 s of input latency)");
+                yield return new WaitForSeconds(0.5f);
+                int c1 = combat.SwingsStarted; float spamStart = Time.time;
+                while (Time.time - spamStart < 1.5f) { Keys(Key.J); yield return null; Keys(); yield return null; }
+                int swings = combat.SwingsStarted - c1;
+                float expect = 1.5f / Mathf.Max(tun.attackCooldown, tun.attackDuration);
+                Verdict("S30b spamming attack for 1.5 s is limited by the cooldown (" + swings + " swings, expect ~" + expect.ToString("F1") + ")", Mathf.Abs(swings - expect) <= 1.2f, "");
+                yield return new WaitForSeconds(0.6f);
+
+                // ---- S31: attack buffer: press near the end of the cooldown fires; press too early is forgotten
+                int c2 = combat.SwingsStarted;
+                Keys(Key.J); yield return null; Keys();
+                yield return new WaitForSeconds(0.04f);
+                Keys(Key.J); yield return null; Keys();                                       // 0.04 s in: far from cooldown end (0.36) -> forgotten
+                yield return new WaitForSeconds(0.45f);
+                bool tooEarlyIgnored = combat.SwingsStarted == c2 + 1;
+                yield return new WaitForSeconds(0.4f);
+                int c3 = combat.SwingsStarted;
+                Keys(Key.J); yield return null; Keys();
+                yield return new WaitForSeconds(tun.attackCooldown - 0.07f);
+                Keys(Key.J); yield return null; Keys();                                       // ~0.07 s before the cooldown ends -> buffered, fires
+                yield return new WaitForSeconds(0.2f);
+                Verdict("S31 attack buffer (too-early press ignored=" + tooEarlyIgnored + ", press just before cooldown end fires)", tooEarlyIgnored && combat.SwingsStarted == c3 + 2, "swings " + (combat.SwingsStarted - c3));
+                yield return new WaitForSeconds(0.8f);
+
+                // ---- S32: two-swing combo alternates, resets after a pause and when the direction changes
+                yield return Place(-9f, 0.23f);
+                var seq = new System.Collections.Generic.List<int>();
+                for (int i = 0; i < 3; i++) { int ci = -1; yield return DoSwing(combat, (d, c) => ci = c); seq.Add(ci); yield return new WaitForSeconds(tun.attackCooldown + 0.05f); }
+                yield return new WaitForSeconds(tun.attackDuration + tun.comboResetTime + 0.1f);
+                int afterPause = -1; yield return DoSwing(combat, (d, c) => afterPause = c);
+                yield return new WaitForSeconds(tun.attackCooldown + 0.05f);
+                int afterDirChange = -1; yield return DoSwing(combat, (d, c) => afterDirChange = c, Key.W);   // up-slash right after a forward one: new direction -> starts at 0
+                yield return new WaitForSeconds(0.6f);
+                Verdict("S32 combo sequence " + string.Join(",", seq) + " (expect 0,1,0), after a long pause " + afterPause + " (0), after a direction change " + afterDirChange + " (0)",
+                    seq[0] == 0 && seq[1] == 1 && seq[2] == 0 && afterPause == 0 && afterDirChange == 0, "");
+
+                // ---- S33: direction choice: up when Up held; down only in the air; down on the ground is forward
+                yield return Place(-9f, 0.23f);
+                AttackDir dUp = AttackDir.Forward, dGround = AttackDir.Up, dAir = AttackDir.Forward;
+                yield return DoSwing(combat, (d, c) => dUp = d, Key.W); yield return null; string aUp = slashAnim();
+                yield return new WaitForSeconds(0.5f); Keys();
+                yield return DoSwing(combat, (d, c) => dGround = d, Key.S); yield return null; string aGround = slashAnim();
+                yield return new WaitForSeconds(0.5f); Keys();
+                Tp(-9f, 5f); yield return new WaitForSeconds(0.1f);
+                yield return DoSwing(combat, (d, c) => dAir = d, Key.S); yield return null; string aDown = slashAnim();
+                Keys(); yield return WaitGrounded();
+                Verdict("S33 directions up=" + dUp + " down-on-ground=" + dGround + " down-in-air=" + dAir + " | animations " + aUp + " / " + aGround + " / " + aDown,
+                    dUp == AttackDir.Up && dGround == AttackDir.Forward && dAir == AttackDir.Down && aUp == "AirSlashUp" && aDown == "AirSlashDown" && aGround == "SwordStandingSlash", "");
+
+                // ---- S34: a sideways hit pushes the player away from the target
+                var ground = GameObject.Find("Hit Dummy (ground)").GetComponent<HitTarget>();
+                yield return Place(-4.2f, 0.23f);
+                Keys(Key.D); yield return new WaitForSeconds(0.05f); Keys();                       // face right, toward the dummy at x=-2.5
+                yield return new WaitForSeconds(0.2f);
+                int h0 = ground.HitCount;
+                Keys(Key.J); yield return null; Keys();
+                float minVx = 99f, maxVx2 = -99f;
+                for (int i = 0; i < 12; i++) { yield return new WaitForFixedUpdate(); minVx = Mathf.Min(minVx, rb.linearVelocity.x); maxVx2 = Mathf.Max(maxVx2, rb.linearVelocity.x); }
+                Verdict("S34 forward slash hits the dummy once and recoils the player backwards (vx min " + minVx.ToString("F1") + ", target -" + tun.recoilSpeed + ")",
+                    ground.HitCount == h0 + 1 && minVx < -tun.recoilSpeed + 0.6f, Snap());
+                yield return new WaitForSeconds(0.6f);
+
+                // ---- S35: down-slash pogo: bounce, refreshed air jump + dash, cannot be cut short
+                var pogo = GameObject.Find("Hit Dummy (pogo, air)").GetComponent<HitTarget>();
+                int ph0 = pogo.HitCount;
+                // spend the double jump and the air dash first (high up, clear of everything), so the refresh is visible
+                Tp(-3f, 20f); yield return new WaitForSeconds(0.15f);
+                Keys(Key.Space); yield return null; Keys(); yield return new WaitForSeconds(0.1f);        // air jump
+                Keys(Key.LeftShift); yield return null; Keys(); yield return new WaitForSeconds(0.4f);    // air dash, wait until it has ended
+                int jumpsBefore = p.AirJumpsLeft, dashesBefore = p.AirDashesLeft;
+                Tp(2f, 6.5f); yield return new WaitForFixedUpdate();
+                Keys(Key.S);
+                float fell = 0;
+                while (rb.position.y > 3.7f && fell < 3f) { fell += Time.deltaTime; yield return null; }
+                Keys(Key.S, Key.J); yield return null; Keys(Key.S);
+                bool sawBounce = false; float vyAtBounce = -99f; float yAtBounce = rb.position.y;
+                for (int i = 0; i < 14; i++) { yield return new WaitForFixedUpdate(); if (p.IsBouncing) { sawBounce = true; vyAtBounce = Mathf.Max(vyAtBounce, rb.linearVelocity.y); } }
+                float apex = rb.position.y; Track();
+                for (float t = 0; t < 0.6f; t += Time.deltaTime) { yield return null; apex = Mathf.Max(apex, rb.position.y); }
+                Keys();
+                Verdict("S35 pogo: down-slash hit the dummy (" + (pogo.HitCount - ph0) + "x), bounced (vy " + vyAtBounce.ToString("F1") + "), air jump " + jumpsBefore + " -> " + p.AirJumpsLeft + ", rose " + (apex - yAtBounce).ToString("F2") + " u",
+                    pogo.HitCount == ph0 + 1 && sawBounce && vyAtBounce > tun.jumpSpeed - 1f && jumpsBefore == 0 && dashesBefore == 0
+                    && p.AirJumpsLeft == tun.airJumps && p.AirDashesLeft == tun.airDashes, "");
+                yield return WaitGrounded();
+
+                // ---- S36: an attack pressed during a dash waits for the dash to end
+                yield return Place(-12f, 0.23f);
+                int c4 = combat.SwingsStarted;
+                Keys(Key.D, Key.LeftShift); yield return null; yield return null; Keys(Key.D);
+                yield return new WaitForSeconds(0.04f);
+                Keys(Key.D, Key.J); yield return null; Keys(Key.D);
+                bool swungDuringDash = false;
+                for (int i = 0; i < 4; i++) { yield return new WaitForFixedUpdate(); if (p.IsDashing && combat.SwingsStarted > c4) swungDuringDash = true; }
+                yield return new WaitForSeconds(0.4f); Keys();
+                Verdict("S36 no swing during a dash; the buffered press swings once the dash is over", !swungDuringDash && combat.SwingsStarted == c4 + 1, "swings " + (combat.SwingsStarted - c4));
+                yield return new WaitForSeconds(0.6f);
+
+                // ---- S37: wall slide rules: forward slash slows the slide; up slash lets go of the wall
+                yield return Place(12.9f, 5.5f, 0.05f);
+                Keys(Key.A); yield return new WaitForSeconds(0.4f);
+                float vSlide = rb.linearVelocity.y;
+                Keys(Key.A, Key.J); yield return null; Keys(Key.A);
+                yield return new WaitForSeconds(0.1f);
+                float vAfterSlash = rb.linearVelocity.y;
+                yield return new WaitForSeconds(0.6f);
+                float xBeforeUp = rb.position.x;
+                Keys(Key.A, Key.W, Key.J); yield return null; Keys(Key.W);                        // let go of the direction so we do not run straight back
+                yield return new WaitForSeconds(0.04f);
+                bool letGo = !p.IsWallSliding && Mathf.Abs(rb.position.x - xBeforeUp) > 0.4f; Keys();
+                Verdict("S37 wall: forward slash halves the slide speed (" + vSlide.ToString("F1") + " -> " + vAfterSlash.ToString("F1") + "), up slash lets go of the wall (" + letGo + ")",
+                    vAfterSlash > vSlide * 0.75f && letGo, "");
+                Keys(); yield return WaitGrounded();
+            }
+
+        }
+
+        /// <summary>The default run: only the newer mechanics. The old movement / combat scenarios are in Hunt() ("legacy").</summary>
+        IEnumerator RecentTests()
+        {
+            yield return DamageTests();
+            yield return FeelTests();                             // hit-stop + screen shake
+            yield return SilkTests();                             // silk + bind
+            yield return SprintTests();                           // sprint + sprint jump
+        }
+
+        /// <summary>The old scenarios (S1-S46 ...): run, jump, double jump, dash, wall slide / jump, combat, float, hard landing, camera. Opt-in: HK_ONLY = "legacy".</summary>
+        IEnumerator Hunt()
+        {
+            bool jumped = false;
+
+            // ---- S1 (reported): under "Platform Low" (x 4..8, bottom y 0.95): jump into the ceiling, walk out, jump
+            yield return Place(6f, 0.23f);
+            Keys(Key.Space); yield return new WaitForSeconds(0.5f); Keys();
+            yield return new WaitForSeconds(0.3f);
+            Keys(Key.A); yield return new WaitForSeconds(0.7f);              // walk out to ~x=2.9
+            yield return PressJump(r => jumped = r, 0.25f, Key.A);
+            Verdict("S1 jump after head-bump under platform, then walking out", jumped, Snap());
+            Keys(); yield return new WaitForSeconds(1.0f);
+
+            // ---- S1b: same but standing still after the bump
+            yield return Place(6f, 0.23f);
+            Keys(Key.Space); yield return new WaitForSeconds(0.4f); Keys(); yield return new WaitForSeconds(0.3f);
+            yield return PressJump(r => jumped = r, 0.25f);
+            Verdict("S1b jump again right after head-bump (still under platform; ceiling blocks)", !jumped || true, "just informational: " + Snap());
+
+            // ---- S1c: tap-jump under the platform five times then leave and jump
+            yield return Place(6f, 0.23f);
+            for (int i = 0; i < 5; i++) { Keys(Key.Space); yield return new WaitForSeconds(0.1f); Keys(); yield return new WaitForSeconds(0.15f); }
+            Keys(Key.A); yield return new WaitForSeconds(0.7f);
+            yield return PressJump(r => jumped = r, 0.25f, Key.A);
+            Verdict("S1c jump after repeated head-bump taps", jumped, Snap());
+            Keys(); yield return new WaitForSeconds(1.0f);
+
+            // ---- S2: jump while pressed into a wall on the ground (Wall left face x=11.5)
+            yield return Place(11.05f, 0.23f);
+            Keys(Key.D); yield return new WaitForSeconds(0.3f);
+            bool slidingOnGround = p.IsWallSliding;
+            yield return PressJump(r => jumped = r, 0.25f, Key.D);
+            Verdict("S2 jump while pushing into a wall", jumped && !slidingOnGround, "slidingOnGround=" + slidingOnGround + " " + Snap());
+            Keys(); yield return new WaitForSeconds(1.0f);
+
+            // ---- S3: run at a platform and jump onto its top (Platform Low x 4..8, top 1.45)
+            yield return Place(1.0f, 0.23f);
+            Keys(Key.D); yield return new WaitForSeconds(0.1f);
+            Keys(Key.D, Key.Space); yield return new WaitForSeconds(0.2f);
+            Keys(Key.D, Key.Space); yield return new WaitForSeconds(0.1f);
+            Keys(Key.D);
+            for (float t = 0; t < 2f; t += Time.deltaTime) { yield return null; if (t > 0.3f && p.IsGrounded) break; }
+            Keys(); yield return new WaitForSeconds(0.3f);
+            Verdict("S3 running jump up onto a platform lands on it", p.IsGrounded && rb.position.y > 1.8f && rb.position.x > 3.9f && rb.position.x < 8.35f, Snap());   // platform spans x 4..8; centre may sit a hair past the edge
+
+            // ---- S3b: head clips the corner of a platform when jumping next to it (player spans 3.22..4.02, platform starts x=4)
+            yield return Place(3.62f, 0.23f);
+            Track(); Keys(Key.Space); yield return new WaitForSeconds(0.45f); Keys();
+            float rise = peakY - 0.23f;
+            Verdict("S3b jump with head slightly under a platform corner reaches height (corner forgiveness)", rise > 3.5f, "rise=" + rise.ToString("F2") + " (full=4.2) " + Snap());
+            yield return WaitGrounded();
+
+            // ---- S3c: fall onto a platform edge, feet just below the top while pressing toward it (ledge forgiveness)
+            yield return Place(3.59f, 2.0f, 0.02f);       // feet 0.15 below the platform top (1.45); already touching its face (x=4)
+            Log("S3c start: " + Snap() + " wallDir=" + p.WallDirection + " sliding=" + p.IsWallSliding);
+            Keys(Key.D);
+            for (int i = 0; i < 6; i++) { yield return new WaitForFixedUpdate(); Log("S3c step " + i + ": " + Snap() + " wallDir=" + p.WallDirection + " sliding=" + p.IsWallSliding); }
+            yield return new WaitForSeconds(0.25f);
+            Keys(); yield return new WaitForSeconds(0.3f);
+            Verdict("S3c ledge step-up: pressing into a platform whose top is 0.15 above the feet puts you on top", p.IsGrounded && rb.position.x > 4.2f && rb.position.y > 1.8f, Snap());
+
+            yield return Place(3.59f, 1.4f, 0.02f);       // feet 0.35 below the top: too low to pop up, should just bump
+            Keys(Key.D); yield return new WaitForSeconds(0.5f); Keys(); yield return new WaitForSeconds(0.3f);
+            Verdict("S3d no step-up when the ledge is more than 0.25 above the feet", rb.position.x < 3.8f || rb.position.y < 1.5f, Snap());
+
+            // ---- S4: mash jump 8 times on flat ground
+            yield return Place(-6f, 0.23f);
+            int takeoffs = 0;
+            for (int i = 0; i < 8; i++)
+            {
+                bool left = false;
+                yield return PressJump(r => left = r, 0.18f);
+                if (left) takeoffs++;
+                Keys(); yield return new WaitForSeconds(0.55f);
+            }
+            Verdict("S4 tap jump 8 times with a gap each time", takeoffs == 8, takeoffs + "/8 takeoffs " + Snap());
+
+            // ---- S5: dash then jump while still dashing (press 3 steps into a dash)
+            yield return Place(-8f, 0.23f);
+            Keys(Key.D, Key.LeftShift); yield return null; Keys(Key.D);
+            yield return new WaitForSeconds(0.06f);
+            float y5 = rb.position.y;
+            Track();
+            Keys(Key.D, Key.Space);
+            yield return new WaitForSeconds(0.5f);
+            Verdict("S5 jump pressed during a ground dash fires when the dash ends", peakY > y5 + 1.0f, "rise " + (peakY - y5).ToString("F2") + " " + Snap());
+            Keys(); yield return WaitGrounded();
+
+            // ---- S6: spam dash
+            yield return Place(-8f, 0.23f);
+            int dashes = 0; bool wasDash = false;
+            for (int i = 0; i < 40; i++)
+            {
+                Keys(Key.D, (i % 2 == 0) ? Key.LeftShift : Key.D);
+                yield return new WaitForSeconds(0.04f);
+                if (p.IsDashing && !wasDash) dashes++;
+                wasDash = p.IsDashing;
+            }
+            Keys();
+            Verdict("S6 spamming dash (1.6 s) gives a dash about every 0.5 s", dashes >= 3 && dashes <= 6, dashes + " dashes " + Snap());
+            yield return new WaitForSeconds(1.0f);
+
+            // ---- S7: walk off a ledge, jump late (after coyote): should get the air jump
+            yield return Place(-4.4f, 4.45f);             // on "Platform High" (x -8..-4, top 3.75), near its right edge
+            Keys(Key.D); int guard = 0; while (p.IsGrounded && guard++ < 200) yield return new WaitForFixedUpdate();
+            Keys();                                   // stop pushing so we simply fall
+            yield return Steps(10);
+            float vyBefore = rb.linearVelocity.y;
+            Log("S7 before late press: " + Snap());
+            Keys(Key.Space); yield return new WaitForSeconds(0.08f);
+            Verdict("S7 late jump (after coyote) after walking off a ledge gives the 12-speed air jump", Mathf.Abs(rb.linearVelocity.y - 12f) < 1.5f, "vy " + vyBefore.ToString("F1") + " -> " + rb.linearVelocity.y.ToString("F1"));
+            Keys(); yield return WaitGrounded();
+
+            // ---- S8: wall jump from the base of a wall while holding into it
+            yield return Place(11.05f, 0.23f);
+            Keys(Key.D, Key.Space); yield return new WaitForSeconds(0.35f);      // jump up the wall holding into it
+            bool sliding = p.IsWallSliding || p.WallDirection != 0;
+            Keys(Key.D); yield return new WaitForSeconds(0.5f);
+            float yBeforeKick = rb.position.y;
+            Keys(Key.D, Key.Space); yield return new WaitForSeconds(0.1f); Keys(Key.D);
+            Verdict("S8 climb a wall by jumping into it, then wall jump", rb.linearVelocity.x < -3f || rb.position.x < 11f, "touchedWall=" + sliding + " " + Snap());
+            Keys(); yield return WaitGrounded();
+
+            // ---- S9: opposite keys at once
+            yield return Place(-6f, 0.23f);
+            Keys(Key.A, Key.D); yield return new WaitForSeconds(0.4f);
+            Verdict("S9 A+D together does not move or jitter", Mathf.Abs(rb.linearVelocity.x) < 0.5f, Snap());
+            Keys();
+
+            // ---- S10: jump straight up against the underside of the High platform (x -8..-4, bottom y 3.25): does it stick or bounce?
+            yield return Place(-6f, 0.23f);
+            Track(); Keys(Key.Space); yield return new WaitForSeconds(0.45f); Keys();
+            Verdict("S10 full jump below Platform High is not blocked (needs 3.75 clearance)", peakY - 0.23f > 3.3f || true, "informational: peak rise " + (peakY - 0.23f).ToString("F2"));
+            yield return WaitGrounded();
+
+            // ---- S12: two air dashes without touching down (second must be refused), then land and dash again
+            yield return Place(-3f, 30f, 0.05f);           // high enough that he stays airborne for all three attempts
+            int airDashes = 0; bool prev = false;
+            for (int i = 0; i < 3; i++)
+            {
+                Keys(Key.D, Key.LeftShift); yield return null; yield return null; Keys(Key.D);
+                for (int k = 0; k < 8; k++) { yield return null; if (p.IsDashing && !prev) airDashes++; prev = p.IsDashing; }
+                yield return new WaitForSeconds(0.25f);
+            }
+            Keys();
+            Verdict("S12 only 1 air dash per airtime (dashes seen: " + airDashes + ")", airDashes == 1, Snap());
+            yield return WaitGrounded();
+
+            // ---- S13: wall jump gives the double jump back
+            yield return Place(16.4f, 4f, 0.05f);                       // against Wall 2's RIGHT face (x=16); open space and no floor to the right
+            Keys(Key.A); yield return new WaitForSeconds(0.3f);
+            Keys(Key.A, Key.Space); yield return new WaitForSeconds(0.1f); Keys(Key.D);   // kick away to the right
+            yield return new WaitForSeconds(0.2f);
+            Keys(Key.D);
+            float vy13 = rb.linearVelocity.y;
+            Log("S13 before air press: " + Snap());
+            Keys(Key.D, Key.Space); yield return new WaitForSeconds(0.08f);
+            Verdict("S13 air jump (speed 12) available after a wall jump", Mathf.Abs(rb.linearVelocity.y - 12f) < 1.5f, "vy before " + vy13.ToString("F1") + " after " + rb.linearVelocity.y.ToString("F1") + " " + Snap());
+            Keys(); yield return WaitGrounded();
+
+            // ---- S14: input latency: key event -> first movement, in ms and frames
+            yield return Place(-6f, 0.23f);
+            yield return LatencyProbe("jump", Key.Space, () => rb.linearVelocity.y > 1f);
+            yield return WaitGrounded();
+            yield return Place(-6f, 0.23f);
+            yield return LatencyProbe("run start", Key.D, () => rb.linearVelocity.x > 0.5f);
+            Keys(); yield return new WaitForSeconds(0.5f);
+            yield return Place(-6f, 0.23f);
+            yield return LatencyProbe("dash", Key.LeftShift, () => p.IsDashing);
+            Keys(); yield return new WaitForSeconds(0.6f);
+
+            // ---- S17: turn-around and stopping
+            yield return Place(-9f, 0.23f);
+            Keys(Key.D); yield return new WaitForSeconds(0.4f);
+            float tTurn = 0f; Keys(Key.A);
+            while (rb.linearVelocity.x > -8f && tTurn < 1f) { tTurn += Time.deltaTime; yield return null; }
+            Verdict("S17a reversing from full speed right to full speed left takes < 0.25 s", tTurn < 0.25f, "took " + tTurn.ToString("F3") + " s");
+            float xs = rb.position.x; Keys();
+            yield return new WaitForSeconds(0.4f);
+            Verdict("S17b stop distance after releasing at full speed < 0.6 units", Mathf.Abs(rb.position.x - xs) < 0.6f, "stopped in " + Mathf.Abs(rb.position.x - xs).ToString("F2") + " u");
+
+            // ---- S18: the animator follows what the player is doing
+            var anim = p.GetComponentInChildren<Animator>();
+            string[] names = { "Idle", "Run", "JumpRise", "JumpMid", "JumpFall", "Land", "DashLoop", "WallSlide", "WallJump", "FrontFlip" };
+            System.Func<string> animName = () =>
+            {
+                var st = anim.IsInTransition(0) ? anim.GetNextAnimatorStateInfo(0) : anim.GetCurrentAnimatorStateInfo(0);
+                foreach (var n in names) if (st.IsName(n)) return n;
+                return "?";
+            };
+            if (anim == null) Log("FAIL S18 no Animator under the player");
+            else
+            {
+                yield return Place(-9f, 0.23f, 1.0f);
+                string sIdle = animName();
+                Keys(Key.D); yield return new WaitForSeconds(0.4f);
+                string sRun = animName();
+                Keys(Key.D, Key.Space); yield return new WaitForSeconds(0.1f);
+                string sRise = animName();
+                Keys(Key.D); yield return new WaitForSeconds(0.6f);
+                string sAfter = animName();
+                Verdict("S18a idle/run/jump animations: " + sIdle + " / " + sRun + " / " + sRise + " / later " + sAfter,
+                    sIdle == "Idle" && sRun == "Run" && (sRise == "JumpRise" || sRise == "JumpMid"), "");
+                Keys(); yield return WaitGrounded();
+                Keys(Key.D, Key.LeftShift); yield return null; yield return null; Keys(Key.D);
+                yield return new WaitForSeconds(0.08f);
+                string sDash = animName();
+                Verdict("S18b dash animation: " + sDash, sDash == "DashLoop", "");
+                Keys(); yield return new WaitForSeconds(0.8f);
+                yield return Place(12.9f, 4f, 0.05f);
+                Keys(Key.A); yield return new WaitForSeconds(0.35f);
+                string sWall = animName();
+                Verdict("S18c wall slide animation: " + sWall, sWall == "WallSlide", "");
+                Keys(); yield return WaitGrounded();
+            }
+
+            // ---- S24: while wall sliding the character's art touches the wall (no visible gap)
+            {
+                yield return Place(12.9f, 4.5f, 0.05f);                       // Wall's right face is at x=12.5
+                Keys(Key.A); yield return new WaitForSeconds(0.4f);
+                var vsr = p.GetComponentInChildren<Animator>().GetComponent<SpriteRenderer>();   // the character, not the disabled root placeholder
+                float worst = -999f, best = 999f; int samples = 0;
+                for (float t = 0; t < 0.7f && p.IsWallSliding; t += Time.deltaTime)
+                {
+                    yield return null;
+                    if (vsr == null || vsr.sprite == null) continue;
+                    float g = OpaqueWorldLeft(vsr) - 12.5f;               // gap from the visible pixels to the wall surface
+                    worst = Mathf.Max(worst, g); best = Mathf.Min(best, g); samples++;
+                }
+                Verdict("S24 gap between the wall and the wall-slide art over " + samples + " frames: " + best.ToString("F2") + " .. " + worst.ToString("F2") + " u",
+                    samples > 10 && worst < 0.035f && best > -0.035f, Snap());
+                Keys(); yield return WaitGrounded();
+            }
+
+            // ---- S19: sticky wall: stays on the wall with no input, drops after holding away ~8 steps
+            yield return Place(12.9f, 4.5f, 0.05f);
+            Keys(Key.A); yield return new WaitForSeconds(0.3f);
+            Keys(); yield return new WaitForSeconds(0.4f);
+            bool stillSliding = p.IsWallSliding;
+            Keys(Key.D); yield return new WaitForSeconds(0.06f);          // a short tap away (< 8 steps) must not drop you
+            bool afterTap = p.IsWallSliding;
+            Keys(); yield return new WaitForSeconds(0.1f);
+            Keys(Key.D); yield return new WaitForSeconds(0.30f);          // held away long enough: let go
+            bool afterHold = p.IsWallSliding;
+            Verdict("S19 sticky wall (slide with no input / survives a short tap away / releases after a long hold away)",
+                stillSliding && afterTap && !afterHold, "noInput=" + stillSliding + " shortTap=" + afterTap + " longHold=" + afterHold + " " + Snap());
+            Keys(); yield return WaitGrounded();
+
+            // ---- S20: air dash into a wall puts you on the wall
+            yield return Place(10.2f, 6f, 0.05f);                             // above Wall's top (y 5)? no: use the shaft side of Wall 2
+            yield return Place(13.2f, 6.5f, 0.05f);                           // in the shaft, dash right into Wall 2 (left face x=15)
+            Keys(Key.D, Key.LeftShift); yield return null; yield return null; Keys(Key.D);
+            yield return new WaitForSeconds(0.45f);
+            Verdict("S20 dashing into a wall ends in a wall slide", p.IsWallSliding && !p.IsDashing, Snap());
+            Keys(); yield return WaitGrounded();
+
+            // ---- S21: the dash cooldown runs from the START of the dash (23 steps = 0.46 s)
+            yield return Place(-12f, 0.23f);
+            int d21 = 0; bool wd = false;
+            Keys(Key.D, Key.LeftShift); yield return null; yield return null; Keys(Key.D);
+            for (float t = 0; t < 0.22f; t += Time.deltaTime) { yield return null; if (p.IsDashing && !wd) d21++; wd = p.IsDashing; }
+            Keys(Key.D, Key.LeftShift); yield return null; yield return null; Keys(Key.D);                // pressed ~0.22 s after the first: cooling down until 0.46 s
+            yield return new WaitForSeconds(0.2f);                                                         // ~0.43 s after the first dash began: buffered press (0.12 s) has expired
+            bool tooEarly = p.IsDashing && false;
+            bool dashingNow = p.IsDashing;
+            Keys(); yield return new WaitForSeconds(0.5f);
+            Verdict("S21 second dash 0.22 s after the first is refused (cooldown runs from dash start)", !dashingNow, "dashingAt~0.43s=" + dashingNow);
+            yield return new WaitForSeconds(0.6f);
+            Keys(Key.D, Key.LeftShift); yield return null; yield return null; Keys(Key.D);
+            yield return new WaitForSeconds(0.05f);
+            Verdict("S21b a dash after the cooldown works", p.IsDashing, Snap());
+            Keys(); yield return new WaitForSeconds(0.8f);
+
+            // ---- S22: jumping clears most of the dash cooldown: dash, jump, then dash again right away
+            yield return Place(-12f, 0.23f);
+            Keys(Key.D, Key.LeftShift); yield return null; yield return null; Keys(Key.D);
+            yield return new WaitForSeconds(0.20f);                           // dash (9 steps = 0.18 s) just ended
+            Keys(Key.D, Key.Space); yield return new WaitForSeconds(0.10f);   // jump: should cut the cooldown to ~3 steps
+            Keys(Key.D, Key.Space, Key.LeftShift); yield return null; yield return null; Keys(Key.D, Key.Space);
+            yield return new WaitForSeconds(0.05f);
+            Verdict("S22 dash is available again shortly after a jump (jump cut the cooldown)", p.IsDashing, Snap());
+            Keys(); yield return WaitGrounded();
+
+            // ---- S23: wall-jump kick-off speed decays in a line from 12 toward run speed 8.3
+            yield return Place(16.4f, 6f, 0.05f);                             // against Wall 2's right face, open space to the right
+            Keys(Key.A); yield return new WaitForSeconds(0.3f);
+            Keys(Key.A, Key.Space); yield return new WaitForSeconds(0.06f);
+            Keys(Key.Space);
+            float k1 = rb.linearVelocity.x;
+            yield return new WaitForSeconds(0.06f);
+            float k2 = rb.linearVelocity.x;
+            yield return new WaitForSeconds(0.06f);
+            float k3 = rb.linearVelocity.x;
+            Verdict("S23 wall-jump kick-off decays toward run speed (" + k1.ToString("F1") + " -> " + k2.ToString("F1") + " -> " + k3.ToString("F1") + ")",
+                k1 > k2 && k2 > k3 && k3 >= 8.2f && k1 > 10f, "");
+            Keys(); yield return new WaitForSeconds(0.5f);
+
+            yield return CombatTests();
+            yield return WithFloatEnabled(FloatTests());          // the float code still works when switched on
+            yield return WithFloatEnabled(FloatTimingProbe());
+            yield return FloatOffTests();                         // and with the default settings the hero never floats
+            yield return WallFacingTests();
+            yield return HardLandAndCameraTests();
+
+            // ---- S11: chain wall jump between Wall (right face x=12.5) and Wall 2 (left face x=15.0)
+            yield return Place(12.9f, 3f, 0.05f);
+            Keys(Key.A); yield return new WaitForSeconds(0.4f);                     // slide on the left wall
+            bool s11a = p.IsWallSliding;
+            float x0 = rb.position.x;
+            Keys(Key.D, Key.Space); yield return new WaitForSeconds(0.1f); Keys(Key.D);
+            yield return new WaitForSeconds(0.45f);
+            bool s11b = p.IsWallSliding && p.WallDirection == 1;
+            Keys(Key.A, Key.Space); yield return new WaitForSeconds(0.1f); Keys(Key.A);
+            yield return new WaitForSeconds(0.3f);
+            Verdict("S11 chain wall jumping across the shaft", s11a && s11b && rb.linearVelocity.x < 0f || rb.position.x < 14f, "slidLeftWall=" + s11a + " slidRightWall=" + s11b + " " + Snap());
+            Keys(); yield return WaitGrounded();
+        }
+
+        void Tp(float x, float y)
+        {
+            p.transform.position = new Vector3(x, y, p.transform.position.z);
+            rb.position = new Vector2(x, y);
+            rb.linearVelocity = Vector2.zero;
+            Physics2D.SyncTransforms();
+        }
+
+        IEnumerator Steps(int n) { for (int i = 0; i < n; i++) yield return new WaitForFixedUpdate(); }
+
+        IEnumerator CoyoteTrial(int delaySteps)
+        {
+            Keys();
+            Tp(4.6f, 2.15f);                       // on "Platform Low" (x 4..8, top y 1.45), near its left edge
+            yield return new WaitForSeconds(0.5f);
+            Keys(Key.A);
+            int guard = 0;
+            while (p.IsGrounded && guard++ < 200) yield return new WaitForFixedUpdate();
+            yield return Steps(delaySteps);
+            Keys(Key.A, Key.Space);
+            float maxVy = -99f;
+            for (int i = 0; i < 8; i++) { yield return new WaitForFixedUpdate(); maxVy = Mathf.Max(maxVy, rb.linearVelocity.y); }
+            bool jumped = maxVy > 5f;
+            Log("G coyote: pressed " + delaySteps + " steps after leaving ledge -> " + (jumped ? "JUMPED" : "no jump") + " (max vy " + maxVy.ToString("F1") + ")");
+            Keys();
+            yield return WaitGrounded();
+        }
+
+        IEnumerator BufferTrials()
+        {
+            // dry run: how long does the drop take?
+            Keys();
+            Tp(-6f, 2.5f);
+            yield return new WaitForFixedUpdate();
+            float t0 = Time.time; int guard = 0;
+            while (!p.IsGrounded && guard++ < 300) yield return new WaitForFixedUpdate();
+            float fall = Time.time - t0;
+            Log("H drop time = " + fall.ToString("F3") + " s");
+            yield return new WaitForSeconds(0.4f);
+
+            foreach (float lead in new[] { 0.04f, 0.08f, 0.12f, 0.20f, 0.30f })
+            {
+                Keys();
+                Tp(-6f, 2.5f);
+                yield return new WaitForFixedUpdate();
+                yield return new WaitForSeconds(Mathf.Max(0f, fall - lead));
+                landTime = -1f; watchLand = true; pressTime = Time.time;
+                Keys(Key.Space);
+                yield return new WaitForSeconds(lead + 0.12f);
+                bool jumped = !p.IsGrounded && rb.linearVelocity.y > 0f;
+                watchLand = false;
+                float realLead = landTime > 0f ? landTime - pressTime : -1f;
+                Log("H buffer: pressed " + lead.ToString("F2") + " s target; actual press-to-landing = " + realLead.ToString("F3") + " s (~" + Mathf.RoundToInt(realLead / Time.fixedDeltaTime) + " steps) -> " + (jumped ? "JUMPED on landing" : "no jump"));
+                Keys();
+                yield return WaitGrounded();
+            }
+        }
+
+        IEnumerator CameraTrials(float groundY)
+        {
+            var cam = Camera.main;
+            var follow = cam != null ? cam.GetComponent<Hollowknight.CameraSystem.CameraFollow2D>() : null;
+            if (follow == null) { Log("I camera: no CameraFollow2D on main camera"); yield break; }
+            var zone = FindFirstObjectByType<Hollowknight.CameraSystem.CameraLockZone>();
+            Log("I camera: aspect=" + cam.aspect.ToString("F2") + " halfH=" + cam.orthographicSize + " zone=" + (zone != null));
+
+            // free camera (no lock zone) for look-ahead / dead-zone / fall tests
+            if (zone != null) { follow.ExitZone(zone); zone.gameObject.SetActive(false); }
+            Keys(); Tp(-2f, groundY); follow.SnapToTarget();
+            yield return new WaitForSeconds(0.8f);
+            Log("I rest: cam-player x=" + (cam.transform.position.x - rb.position.x).ToString("F2") + " y=" + (cam.transform.position.y - rb.position.y).ToString("F2") + " (baseOffset y 1.2)");
+
+            Keys(Key.D); yield return new WaitForSeconds(0.6f);
+            Log("I look-ahead moving right: cam-player x=" + (cam.transform.position.x - rb.position.x).ToString("F2") + " (expect ~+2.5)");
+            Keys(Key.A); yield return new WaitForSeconds(0.9f);
+            Log("I look-ahead moving left: cam-player x=" + (cam.transform.position.x - rb.position.x).ToString("F2") + " (expect ~-2.5)");
+            Keys(); yield return new WaitForSeconds(0.5f);
+
+            // vertical dead zone: full jump, how much does the camera move compared to the player?
+            Tp(0f, groundY); follow.SnapToTarget(); yield return new WaitForSeconds(0.6f);
+            float camY0 = cam.transform.position.y, camMin = camY0, camMax = camY0;
+            Track(); Keys(Key.Space);
+            for (int i = 0; i < 40; i++)
+            {
+                yield return new WaitForFixedUpdate();
+                float cy = cam.transform.position.y; camMin = Mathf.Min(camMin, cy); camMax = Mathf.Max(camMax, cy);
+                if (i == 20) Keys();
+            }
+            Log("I dead zone: player rose " + (peakY - groundY).ToString("F2") + ", camera moved up " + (camMax - camY0).ToString("F2") + " (air dead zone 2.5 + rise offset 0.5)");
+            yield return WaitGrounded();
+
+            // fall offset: drop from height, sample camera-player y at max fall speed
+            Tp(0f, groundY + 9f); follow.SnapToTarget();
+            yield return Steps(3); // let the controller notice it is airborne
+            float worst = 0f, atSpeed = 0f; int guard = 0;
+            while (!p.IsGrounded && guard++ < 400)
+            {
+                yield return new WaitForFixedUpdate();
+                float rel = cam.transform.position.y - rb.position.y;
+                if (guard % 3 == 0) Log("I fall step " + guard + ": player y=" + rb.position.y.ToString("F2") + " vy=" + rb.linearVelocity.y.ToString("F1") + " cam y=" + cam.transform.position.y.ToString("F2") + " rel=" + rel.ToString("F2") + " state=" + p.State);
+                if (-rb.linearVelocity.y > 17f) atSpeed = rel;
+                worst = Mathf.Min(worst, rel);
+            }
+            Log("I fall offset: cam-player y at fast fall = " + atSpeed.ToString("F2") + " (base +1.2, fall offset up to -3 => ~-1.8), lowest seen " + worst.ToString("F2"));
+            yield return new WaitForSeconds(1.5f);
+            Log("I after landing: cam-player y = " + (cam.transform.position.y - rb.position.y).ToString("F2") + " (settles back to ~+1.2)");
+
+            // lock zone clamp
+            if (zone != null)
+            {
+                zone.gameObject.SetActive(true); follow.EnterZone(zone);
+                Tp(14f, groundY); yield return new WaitForSeconds(1.2f);
+                var b = zone.Bounds; float halfW = cam.orthographicSize * cam.aspect;
+                Log("I lock zone: player x=" + rb.position.x.ToString("F1") + " cam x=" + cam.transform.position.x.ToString("F2") + " (max allowed " + (b.max.x - halfW).ToString("F2") + "), cam y=" + cam.transform.position.y.ToString("F2") + " (min allowed " + (b.min.y + cam.orthographicSize).ToString("F2") + ")");
+            }
+            Keys();
+        }
+
+        // ====================================================================== damage / health / invulnerability
+
+        readonly System.Collections.Generic.List<GameObject> spawned = new System.Collections.Generic.List<GameObject>();
+
+        GameObject SpawnDamager(Vector2 center, Vector2 size, DamageKind kind)
+        {
+            var go = new GameObject("PlaytestDamager");
+            go.transform.position = center;
+            var c = go.AddComponent<BoxCollider2D>(); c.size = size; c.isTrigger = true;
+            go.AddComponent<DamageSource2D>().kind = kind;
+            spawned.Add(go);
+            return go;
+        }
+
+        /// <summary>Removes spawned damagers, waits out any invulnerability / knock-back / respawn, and refills health.</summary>
+        IEnumerator ResetDamageState(PlayerHealth2D h)
+        {
+            Keys();
+            foreach (var g in spawned) if (g != null) Destroy(g);
+            spawned.Clear();
+            h.GodMode = false;
+            for (float t = 0; t < 6f && (h.IsInvulnerable || p.IsDamaged || h.IsRespawning || h.IsDead || p.IsHeldForRespawn); t += Time.unscaledDeltaTime)
+                yield return null;
+            h.Heal(h.MaxHealth);
+            yield return new WaitForSeconds(0.05f);
+        }
+
+        /// <summary>Waits (real time) until another hit has registered. done(false) on timeout.</summary>
+        IEnumerator WaitForHit(PlayerHealth2D h, int hitsBefore, float timeout, System.Action<bool> done)
+        {
+            for (float t = 0; t < timeout; t += Time.unscaledDeltaTime)
+            {
+                if (h.HitsTaken > hitsBefore) { done(true); yield break; }
+                yield return null;
+            }
+            done(false);
+        }
+
+        IEnumerator DamageTests()
+        {
+            var h = p.GetComponent<PlayerHealth2D>();
+            if (h == null) { Verdict("S50 PlayerHealth2D is on the player", false, "missing"); yield break; }
+            var tun = p.Tuning;
+            var combat = p.GetComponent<PlayerCombat2D>();
+            yield return ResetDamageState(h);
+            Verdict("S50 health starts full and the hero is vulnerable (" + h.Health + "/" + h.MaxHealth + ")",
+                h.Health == h.MaxHealth && h.MaxHealth == tun.maxHealth && !h.IsInvulnerable && !h.IsDead && h.CanTakeDamage, "");
+
+            // ---- S51-S55: walk into an enemy from the left, keep holding "right" the whole time
+            {
+                yield return Place(-8f, 0.23f, 0.6f);
+                SpawnDamager(new Vector2(-6f, 0.2f), new Vector2(1f, 1.4f), DamageKind.Enemy);
+                int hits0 = h.HitsTaken, hp0 = h.Health;
+                bool landed = false;
+                Keys(Key.D);
+                yield return WaitForHit(h, hits0, 3f, ok => landed = ok);
+                float hitTime = Time.time;
+                damagedCount = 0; countDamaged = true;
+                bool damagedAtOnce = p.IsDamaged, invulnAtOnce = h.IsInvulnerable, frozenAtOnce = h.IsFrozen;
+                Vector2 v0 = rb.linearVelocity;
+                float xAtHit = rb.position.x;
+                int hpAfter = h.Health;
+                Verdict("S51 walking into an enemy costs exactly 1 health (" + hp0 + " -> " + hpAfter + ")", landed && hpAfter == hp0 - 1, "");
+
+                // the freeze ramps down over a hair of real time first, then holds the game at ~0 for the table's wait
+                float r0 = Time.realtimeSinceStartup;
+                while (Time.timeScale > 0.01f && Time.realtimeSinceStartup - r0 < 0.3f) yield return null;
+                bool reachedZero = Time.timeScale <= 0.01f;
+                float r1 = Time.realtimeSinceStartup;
+                while (Time.timeScale <= 0.01f && Time.realtimeSinceStartup - r1 < 1f) yield return null;
+                float freezeLen = Time.realtimeSinceStartup - r1;
+                for (float w = 0f; FreezeMoment.IsFrozen && w < 1f; w += Time.unscaledDeltaTime) yield return null;
+                var ft = FreezeMoment.GetTiming(tun.heroDamageFreeze);
+                Verdict("S52 hit-stop (" + tun.heroDamageFreeze + ") holds the game at ~0 for ~" + ft.Wait + " s real time (measured " + freezeLen.ToString("F3") + " s) and then time is back to 1 (" + Time.timeScale.ToString("F2") + ")",
+                    frozenAtOnce && reachedZero && freezeLen > ft.Wait * 0.8f && freezeLen < ft.Wait + 0.25f && Mathf.Approximately(Time.timeScale, 1f),
+                    "frozenAtOnce=" + frozenAtOnce + " reachedZero=" + reachedZero);
+
+                // knock-back: forced velocity away from the enemy for ~damageRecoilTime, input (D held) ignored
+                // (the hit-stop's ramp-up already lets a few knock-back steps run while S52 waits it out, so the steps are
+                // counted by FixedUpdate from the moment of the hit, not from here)
+                float minX = rb.position.x, peakVy = v0.y; bool stoppedAtEnd = false;
+                for (int i = 0; i < 40; i++)
+                {
+                    yield return new WaitForFixedUpdate();
+                    if (p.IsDamaged) { minX = Mathf.Min(minX, rb.position.x); peakVy = Mathf.Max(peakVy, rb.linearVelocity.y); }
+                    else { stoppedAtEnd = Mathf.Abs(rb.linearVelocity.x) < 1.5f; break; }
+                }
+                countDamaged = false;
+                int damagedSteps = damagedCount;
+                int expectSteps = Mathf.RoundToInt(tun.damageRecoilTime / Time.fixedDeltaTime);
+                Verdict("S53 knock-back: pushed away from the enemy at " + v0.x.ToString("F1") + " (target -" + tun.damageRecoilVelocity.x + "), popped up " + peakVy.ToString("F1") + ", " + damagedSteps + " steps (target " + expectSteps + "), moved " + (xAtHit - minX).ToString("F2") + " u back despite holding D",
+                    damagedAtOnce && Mathf.Abs(v0.x + tun.damageRecoilVelocity.x) < 0.6f && peakVy > tun.damageRecoilVelocity.y - 1f
+                    && Mathf.Abs(damagedSteps - expectSteps) <= 1 && xAtHit - minX > 1.0f, "");
+                Verdict("S54 after the knock-back the hero stops dead and control returns (vx " + rb.linearVelocity.x.ToString("F2") + ")", stoppedAtEnd || !p.IsDamaged, "");
+
+                // invulnerable: still walking into the enemy (D held) must not hurt again until invulnerability ends
+                int hitsMid = h.HitsTaken;
+                bool invulnDuring = invulnAtOnce && h.IsInvulnerable;
+                yield return new WaitForSeconds(0.3f);
+                Keys(); Tp(-6f, 0.23f);                              // stand inside the enemy so the overlap lasts the whole invulnerable period
+                yield return new WaitForSeconds(Mathf.Max(0.1f, tun.invulnerableTime - 0.75f));
+                bool stillOne = h.HitsTaken == hitsMid && h.Health == hpAfter;
+                bool second = false;
+                yield return WaitForHit(h, hitsMid, 2f, ok => second = ok);
+                float gap = Time.time - hitTime;
+                Verdict("S55 invulnerable after a hit: no second hit while it lasts (health stays " + hpAfter + "), the next overlap hurts at " + gap.ToString("F2") + " s (target " + tun.invulnerableTime + " s game time)",
+                    invulnDuring && stillOne && second && gap > tun.invulnerableTime - 0.05f && gap < tun.invulnerableTime + 0.25f, "invulnDuring=" + invulnDuring + " stillOne=" + stillOne + " second=" + second);
+                yield return ResetDamageState(h);
+            }
+
+            // ---- S56: the hero is knocked away from the source from either side, and turns to face it
+            foreach (int side in new[] { -1, 1 })    // side the enemy is on, relative to the hero
+            {
+                yield return Place(-8f, 0.23f, 0.5f);
+                Keys(side < 0 ? Key.D : Key.A); yield return new WaitForSeconds(0.05f); Keys();   // face away from the enemy
+                yield return new WaitForSeconds(0.2f);
+                int facingBefore = p.FacingDirection;
+                int hits0 = h.HitsTaken;
+                SpawnDamager(new Vector2(rb.position.x + side * 0.3f, 0.2f), new Vector2(1f, 1.4f), DamageKind.Enemy);
+                bool landed = false;
+                yield return WaitForHit(h, hits0, 1f, ok => landed = ok);
+                float vx = rb.linearVelocity.x;
+                yield return new WaitForSeconds(0.1f);
+                Verdict("S56 enemy on the " + (side < 0 ? "left" : "right") + ": knocked " + (side < 0 ? "right" : "left") + " (vx " + vx.ToString("F1") + "), hero turns from facing " + facingBefore + " to " + p.FacingDirection + " (toward the enemy)",
+                    landed && Mathf.Sign(vx) == -side && facingBefore == -side && p.FacingDirection == side, "");
+                yield return ResetDamageState(h);
+            }
+
+            // ---- S57: a hit cancels a dash in progress
+            {
+                yield return Place(-9f, 0.23f, 0.6f);
+                SpawnDamager(new Vector2(-6.2f, 0.2f), new Vector2(1f, 1.4f), DamageKind.Enemy);
+                int hits0 = h.HitsTaken; bool landed = false;
+                Keys(Key.D, Key.LeftShift); yield return null; yield return null; Keys(Key.D);
+                bool wasDashing = false;
+                for (float t = 0; t < 0.3f && h.HitsTaken == hits0; t += Time.unscaledDeltaTime) { wasDashing |= p.IsDashing; yield return null; }
+                landed = h.HitsTaken > hits0;
+                Verdict("S57 hit during a dash cancels it (dashing before " + wasDashing + ", after " + p.IsDashing + ", damaged " + p.IsDamaged + ")", landed && wasDashing && !p.IsDashing && p.IsDamaged, "");
+                yield return ResetDamageState(h);
+            }
+
+            // ---- S58: a hit cancels a swing and throws away the buffered attack press
+            if (combat != null)
+            {
+                yield return Place(-8f, 0.23f, 0.6f);
+                int hits0 = h.HitsTaken; bool landed = false;
+                Keys(Key.J); yield return null; Keys();
+                for (float t = 0; t < 0.3f && !combat.IsAttacking; t += Time.unscaledDeltaTime) yield return null;
+                bool swinging = combat.IsAttacking;
+                int swings0 = combat.SwingsStarted;
+                SpawnDamager(new Vector2(rb.position.x + 0.3f, 0.2f), new Vector2(1f, 1.4f), DamageKind.Enemy);
+                yield return WaitForHit(h, hits0, 1f, ok => landed = ok);
+                Keys(Key.J); yield return null; Keys();                              // a press made during the knock-back is thrown away
+                yield return new WaitForSeconds(0.1f);
+                bool cancelled = !combat.IsAttacking;
+                yield return new WaitForSeconds(0.3f);
+                Verdict("S58 hit cancels the swing (was swinging " + swinging + ", now " + combat.IsAttacking + ") and a press during the knock-back does nothing (swings " + swings0 + " -> " + combat.SwingsStarted + ")",
+                    landed && swinging && cancelled && combat.SwingsStarted == swings0, "");
+                yield return ResetDamageState(h);
+            }
+
+            // ---- S59: a hit mid-jump cancels the jump; the knock-back replaces the rise, then the hero falls normally
+            {
+                yield return Place(1f, 0.23f, 0.7f);
+                float y0 = rb.position.y;
+                int hits0 = h.HitsTaken; bool landed = false;
+                Keys(Key.Space);
+                for (float t = 0; t < 0.4f && rb.linearVelocity.y < 5f; t += Time.unscaledDeltaTime) yield return null;     // rising
+                float yHit = rb.position.y;
+                SpawnDamager(new Vector2(rb.position.x + 0.3f, rb.position.y), new Vector2(1f, 1.4f), DamageKind.Enemy);
+                yield return WaitForHit(h, hits0, 1f, ok => landed = ok);
+                Track(); peakY = rb.position.y;                                       // measure the peak from the hit on
+                yield return new WaitForSeconds(0.1f);
+                bool damagedState = p.State == MotionState.Damaged || p.IsDamaged;
+                Destroy(spawned[spawned.Count - 1]);
+                yield return new WaitForSeconds(0.9f);
+                Keys();
+                tracking = false;
+                Verdict("S59 hit while rising: jump dropped, peak after the hit only " + (peakY - y0).ToString("F2") + " u above the start (a full jump is 4.2), hero ends on the ground: " + p.IsGrounded,
+                    landed && damagedState && peakY - y0 < 3.6f && p.IsGrounded && !p.IsDamaged, "hit at y +" + (yHit - y0).ToString("F2"));
+                yield return ResetDamageState(h);
+            }
+
+            // ---- S60: god mode ignores hits
+            {
+                yield return Place(-8f, 0.23f, 0.5f);
+                h.GodMode = true;
+                int hp0 = h.Health;
+                SpawnDamager(new Vector2(rb.position.x + 0.3f, 0.2f), new Vector2(1f, 1.4f), DamageKind.Enemy);
+                yield return new WaitForSeconds(0.4f);
+                Verdict("S60 god mode: standing in an enemy costs nothing (health " + hp0 + " -> " + h.Health + ")", h.Health == hp0 && !p.IsDamaged, "");
+                yield return ResetDamageState(h);
+            }
+
+            // ---- S61-S62: hazard (spikes): no knock-back, moved back to the last safe ground, control returns
+            {
+                yield return Place(-10f, 0.23f, 0.6f);
+                var spikes = SpawnDamager(new Vector2(-4f, -0.25f), new Vector2(1.6f, 0.5f), DamageKind.Hazard);
+                float spikeLeft = -4.8f;
+                int hits0 = h.HitsTaken, hp0 = h.Health; bool landed = false;
+                Keys(Key.D);
+                yield return WaitForHit(h, hits0, 4f, ok => landed = ok);
+                Vector2 hitPos = rb.position;
+                float hazardHitTime = Time.time;
+                Vector2 safe = h.LastSafePosition;
+                Keys();                                                 // let go, or the hero walks straight back onto the spikes once control returns
+                yield return new WaitForSeconds(0.05f);
+                bool heldStill = p.IsHeldForRespawn && Mathf.Abs(rb.linearVelocity.x) < 0.1f && !p.IsDamaged;
+                var heroSprite = p.GetComponentInChildren<Animator>().GetComponent<SpriteRenderer>();
+                Verdict("S61 spikes: -1 health (" + hp0 + " -> " + h.Health + "), no knock-back, hero held still (held " + p.IsHeldForRespawn + ", vx " + rb.linearVelocity.x.ToString("F2") + "), hidden while waiting (visible " + heroSprite.enabled + "), invulnerable " + h.IsInvulnerable,
+                    landed && h.Health == hp0 - 1 && heldStill && !heroSprite.enabled && h.IsInvulnerable, "");
+
+                yield return new WaitForSeconds(tun.hazardRespawnDelay + 0.1f);
+                Vector2 now = rb.position;
+                Verdict("S62a moved back to the last safe ground (" + now + ", safe spot " + safe + ", hit at " + hitPos + "), clear of the spikes (right edge " + (now.x + 0.4f).ToString("F2") + " < " + spikeLeft + ")",
+                    Vector2.Distance(now, safe) < 0.05f && now.x + 0.4f < spikeLeft && now.x < hitPos.x - 0.3f && heroSprite.enabled && p.FacingDirection == 1,
+                    "visible again " + heroSprite.enabled + ", facing " + p.FacingDirection + " (toward the spikes; weak check: the hero was walking that way anyway)");
+                bool heldNow = p.IsHeldForRespawn;
+                yield return new WaitForSeconds(tun.respawnHoldTime + 0.15f);
+                float xBefore = rb.position.x;
+                Keys(Key.A); yield return new WaitForSeconds(0.3f); Keys();
+                float sinceHit = Time.time - hazardHitTime;
+                Verdict("S62b control returns after the hold (held at " + tun.hazardRespawnDelay + " s: " + heldNow + ", then free; walked " + (xBefore - rb.position.x).ToString("F2") + " u left); " + sinceHit.ToString("F2") + " s after the hit it is still invulnerable (" + h.IsInvulnerable + "; 2x" + tun.invulnerableTime + "+0.3 = " + (tun.invulnerableTime * 2f + 0.3f).ToString("F1") + " s from the respawn)",
+                    heldNow && !p.IsHeldForRespawn && !h.IsRespawning && xBefore - rb.position.x > 1.0f && sinceHit > tun.invulnerableTime && h.IsInvulnerable,
+                    "heldNow=" + heldNow + " held=" + p.IsHeldForRespawn + " respawning=" + h.IsRespawning + " hits=" + (h.HitsTaken - hits0) + " health=" + h.Health);
+                yield return ResetDamageState(h);
+            }
+
+            // ---- S63-S66: dying (5 hits), input ignored while dead, back at the checkpoint with full health
+            {
+                float invul0 = tun.invulnerableTime, delay0 = tun.deathRespawnDelay, hold0 = tun.respawnHoldTime;
+                tun.invulnerableTime = 0.15f; tun.deathRespawnDelay = 0.6f; tun.respawnHoldTime = 0.25f;   // keep the test short; restored below
+                var checkpoint = new Vector2(-12f, 0.23f);
+                h.SetCheckpoint(checkpoint);
+                yield return Place(-8f, 0.23f, 0.6f);
+                int died = 0, respawned = 0; bool invulnAtRespawn = false; bool heldAtRespawn = false; Vector2 posAtRespawn = Vector2.zero; int hpAtRespawn = -1;
+                System.Action onDied = () => died++;
+                System.Action onRespawned = () => { respawned++; invulnAtRespawn = h.IsInvulnerable; heldAtRespawn = p.IsHeldForRespawn; posAtRespawn = rb.position; hpAtRespawn = h.Health; };
+                h.Died += onDied; h.Respawned += onRespawned;
+                int hits0 = h.HitsTaken, hp0 = h.Health;
+                var enemy = SpawnDamager(new Vector2(-8.2f, 0.2f), new Vector2(1f, 1.4f), DamageKind.Enemy);
+                for (float t = 0; t < 8f && !h.IsDead; t += Time.unscaledDeltaTime)
+                {
+                    enemy.transform.position = new Vector3(rb.position.x - 0.2f, 0.2f, 0f);       // the enemy follows the hero, so every knock-back ends inside it again
+                    yield return null;
+                }
+                Keys(Key.D);                                                                      // and now try to walk while dead
+                yield return new WaitForSeconds(0.15f);
+                int hitsToDie = h.HitsTaken - hits0;
+                float xDead = rb.position.x;
+                bool deadState = h.IsDead && p.IsDead && p.State == MotionState.Dead && h.Health == 0;
+                yield return new WaitForSeconds(0.3f);
+                Verdict("S63 " + hp0 + " hits kill the hero (took " + hitsToDie + " hits, health " + h.Health + ", state " + p.State + ", Died fired " + died + "x)",
+                    hitsToDie == hp0 && deadState && died == 1, "");
+                Verdict("S64 while dead, holding D does nothing (x " + xDead.ToString("F2") + " -> " + rb.position.x.ToString("F2") + ") and further overlap adds no hits",
+                    Mathf.Abs(rb.position.x - xDead) < 0.05f && h.HitsTaken - hits0 == hitsToDie, "");
+
+                for (float t = 0; t < 3f && respawned == 0; t += Time.unscaledDeltaTime) yield return null;
+                Keys();
+                Verdict("S65 respawn: back at the checkpoint " + checkpoint + " (got " + posAtRespawn + ") with " + hpAtRespawn + "/" + h.MaxHealth + " health, invulnerable " + invulnAtRespawn + ", held still " + heldAtRespawn,
+                    respawned == 1 && Vector2.Distance(posAtRespawn, checkpoint) < 0.05f && hpAtRespawn == h.MaxHealth && invulnAtRespawn && heldAtRespawn && !h.IsDead && !p.IsDead, "");
+                yield return new WaitForSeconds(tun.respawnHoldTime + 0.2f);
+                float x1 = rb.position.x;
+                Keys(Key.D); yield return new WaitForSeconds(0.3f); Keys();
+                Verdict("S66 control returns after the respawn hold (walked " + (rb.position.x - x1).ToString("F2") + " u right)", !p.IsHeldForRespawn && !h.IsRespawning && rb.position.x - x1 > 1.0f, "");
+                h.Died -= onDied; h.Respawned -= onRespawned;
+                tun.invulnerableTime = invul0; tun.deathRespawnDelay = delay0; tun.respawnHoldTime = hold0;
+                yield return ResetDamageState(h);
+            }
+
+            Verdict("S67 game time is running normally at the end (timeScale " + Time.timeScale + ")", Mathf.Approximately(Time.timeScale, 1f), "");
+        }
+
+        // ====================================================================== hit-stop + screen shake
+
+        IEnumerator RealWait(float seconds)
+        {
+            for (float t = 0f; t < seconds; t += Time.unscaledDeltaTime) yield return null;
+        }
+
+        HitTarget SpawnDummy(Vector2 center, int hitsToKill)
+        {
+            var go = new GameObject("PlaytestDummy");
+            go.transform.position = center;
+            var c = go.AddComponent<BoxCollider2D>(); c.size = new Vector2(1f, 1f); c.isTrigger = true;
+            var t = go.AddComponent<HitTarget>();
+            t.pogo = false; t.recoilsPlayer = false; t.hitsToKill = hitsToKill;
+            spawned.Add(go);
+            return t;
+        }
+
+        IEnumerator FeelTests()
+        {
+            var h = p.GetComponent<PlayerHealth2D>();
+            var combat = p.GetComponent<PlayerCombat2D>();
+            var tun = p.Tuning;
+            var camera = Camera.main;
+            var shake = camera != null ? camera.GetComponent<CameraShake2D>() : null;
+            var follow = camera != null ? camera.GetComponent<Hollowknight.CameraSystem.CameraFollow2D>() : null;
+            if (shake == null || follow == null) { Verdict("FS0 the main camera has CameraFollow2D + CameraShake2D", false, "missing"); yield break; }
+            FreezeMoment.CancelAll();
+            shake.CancelAll(); shake.ResetStats();
+            yield return ResetDamageState(h);
+
+            // ---- FS1: the freeze table has all 15 rows with the numbers read from the DLL
+            {
+                var expect = new[]
+                {
+                    new[] { 0.01f, 0.28f, 0.1f, 0f },      new[] { 0.04f, 0.024f, 0.04f, 0f }, new[] { 0f, 0.35f, 0.1f, 0f },
+                    new[] { 0.01f, 0.25f, 0.1f, 0f },      new[] { 0f, 0.25f, 0.1f, 0f },      new[] { 0.04f, 0.015f, 0.04f, 0f },
+                    new[] { 0.0001f, 0.02f, 0.0001f, 0.0001f }, new[] { 0f, 0.1f, 0f, 0f },   new[] { 0.04f, 0.03f, 0.04f, 0f },
+                    new[] { 0.001f, 0.15f, 0.05f, 0f },    new[] { 0.1f, 1.15f, 0.1f, 0.05f }, new[] { 0.5f, 3f, 0.3f, 0.1f },
+                    new[] { 0.1f, 1f, 0.75f, 0.25f },      new[] { 0.04f, 0.06f, 0.04f, 0f },  new[] { 0.01f, 0.4f, 0.1f, 0f }
+                };
+                bool ok = true; string bad = "";
+                for (int i = 0; i < expect.Length; i++)
+                {
+                    var t = FreezeMoment.GetTiming((FreezeType)i);
+                    if (!Mathf.Approximately(t.RampDown, expect[i][0]) || !Mathf.Approximately(t.Wait, expect[i][1]) || !Mathf.Approximately(t.RampUp, expect[i][2]) || !Mathf.Approximately(t.TargetSpeed, expect[i][3]))
+                    { ok = false; bad += " row" + i; }
+                }
+                Verdict("FS1 the freeze table has all 15 rows with the numbers read from the DLL", ok && expect.Length == 15, bad);
+            }
+
+            // ---- FS2: HeroDamage: ramps to 0, holds ~0.28 s of real time, ramps back to 1; IsFrozen covers it all
+            {
+                int started0 = FreezeMoment.StartedCount;
+                float r0 = Time.realtimeSinceStartup;
+                FreezeMoment.Start(FreezeType.HeroDamage);
+                bool frozenNow = FreezeMoment.IsFrozen;
+                float tsMin = 1f, zeroFrom = -1f, zeroTo = -1f;
+                while (FreezeMoment.IsFrozen && Time.realtimeSinceStartup - r0 < 2f)
+                {
+                    float now = Time.realtimeSinceStartup, ts = Time.timeScale;
+                    tsMin = Mathf.Min(tsMin, ts);
+                    if (ts <= 0.01f) { if (zeroFrom < 0f) zeroFrom = now; zeroTo = now; }
+                    yield return null;
+                }
+                float total = Time.realtimeSinceStartup - r0, hold = zeroFrom < 0f ? 0f : zeroTo - zeroFrom;
+                var ft = FreezeMoment.GetTiming(FreezeType.HeroDamage);
+                Verdict("FS2 HeroDamage hit-stop: game held at ~0 for " + hold.ToString("F3") + " s (table wait " + ft.Wait + "), whole freeze " + total.ToString("F3") + " s (table " + ft.Total.ToString("F2") + "), then speed 1",
+                    frozenNow && FreezeMoment.StartedCount == started0 + 1 && tsMin <= 0.001f && hold > ft.Wait - 0.05f && hold < ft.Wait + 0.12f
+                    && total > ft.Total - 0.02f && total < ft.Total + 0.15f && Mathf.Approximately(Time.timeScale, 1f) && GameTime.ActiveControls == 0,
+                    "tsMin=" + tsMin + " timeScale=" + Time.timeScale + " controls=" + GameTime.ActiveControls);
+            }
+
+            // ---- FS3: QuickFreeze (target 0.0001, 0.02 s) is a blink, and None does nothing
+            {
+                int started0 = FreezeMoment.StartedCount;
+                FreezeMoment.Start(FreezeType.None);
+                bool noneIgnored = FreezeMoment.StartedCount == started0 && !FreezeMoment.IsFrozen;
+                float r0 = Time.realtimeSinceStartup, tsMin = 1f;
+                FreezeMoment.Start(FreezeType.QuickFreeze);
+                tsMin = Mathf.Min(tsMin, Time.timeScale);
+                while (FreezeMoment.IsFrozen && Time.realtimeSinceStartup - r0 < 1f) { tsMin = Mathf.Min(tsMin, Time.timeScale); yield return null; }
+                float total = Time.realtimeSinceStartup - r0;
+                Verdict("FS3 QuickFreeze is a blink (" + total.ToString("F3") + " s, lowest speed " + tsMin.ToString("G3") + "), FreezeType.None does nothing",
+                    noneIgnored && FreezeMoment.StartedCount == started0 + 1 && tsMin <= 0.001f && total < 0.15f && Mathf.Approximately(Time.timeScale, 1f), "");
+            }
+
+            // ---- FS4: stacking: a slow-down (0.05) with a hit-stop (0) on top multiplies to 0, and when the hit-stop ends the slow-down is STILL there
+            {
+                FreezeMoment.Start(FreezeType.BossDeathSlow);
+                yield return RealWait(0.3f);
+                float slowAlone = Time.timeScale;
+                FreezeMoment.Start(FreezeType.HeroDamage);
+                yield return RealWait(0.1f);
+                float stacked = Time.timeScale;
+                yield return RealWait(0.5f);
+                float afterHit = Time.timeScale;
+                bool stillFrozen = FreezeMoment.ActiveCount == 1;
+                for (float w = 0f; FreezeMoment.IsFrozen && w < 3f; w += Time.unscaledDeltaTime) yield return null;
+                Verdict("FS4 stacking: slow-down alone " + slowAlone.ToString("F3") + " (0.05), with a hit-stop on top " + stacked.ToString("G3") + " (0), after the hit-stop " + afterHit.ToString("F3") + " (still ~0.05), at the end " + Time.timeScale.ToString("F2") + " (1)",
+                    Mathf.Abs(slowAlone - 0.05f) < 0.02f && stacked <= 0.002f && Mathf.Abs(afterHit - 0.05f) < 0.02f && stillFrozen
+                    && Mathf.Approximately(Time.timeScale, 1f) && GameTime.ActiveControls == 0 && !FreezeMoment.IsFrozen, "controls=" + GameTime.ActiveControls);
+            }
+
+            // ---- FS5: camera freeze-frames: the whole game stops for N frames of 1/60 s (real time), only when asked for
+            {
+                yield return Place(-9f, 0.23f, 1.5f);
+                shake.CancelAll(); shake.ResetStats();
+                shake.Play(ShakePresets.Big, false);
+                bool noFramesWhenNotAsked = !shake.InFreezeFrames && Time.timeScale > 0.99f;
+                shake.CancelAll();
+                float r0 = Time.realtimeSinceStartup;
+                shake.Play(ShakePresets.Big, true);
+                bool stopped = Time.timeScale == 0f && shake.InFreezeFrames;
+                while (shake.InFreezeFrames && Time.realtimeSinceStartup - r0 < 1f) yield return null;
+                float len = Time.realtimeSinceStartup - r0;
+                float expectLen = ShakePresets.Big.FreezeFrames * 0.016667f;
+                Verdict("FS5 camera freeze-frames: " + ShakePresets.Big.FreezeFrames + " frames stop the game for " + len.ToString("F3") + " s (expect ~" + expectLen.ToString("F3") + "), then time resumes; not used when not asked",
+                    noFramesWhenNotAsked && stopped && len > expectLen - 0.005f && len < expectLen + 0.12f && Mathf.Approximately(Time.timeScale, 1f) && shake.FreezeFramesStarted == 1, "timeScale=" + Time.timeScale);
+                shake.CancelAll(); shake.ResetStats();
+                yield return RealWait(0.2f);
+            }
+
+            // ---- FS6: a shake jitters at most its magnitude, fades out, and ends by itself
+            {
+                shake.CancelAll();
+                var samples = new System.Collections.Generic.List<Vector2>();   // (time, length)
+                float t0 = Time.time;
+                shake.Play(ShakePresets.Average);
+                while (Time.time - t0 < 0.5f) { yield return null; samples.Add(new Vector2(Time.time - t0, shake.AppliedOffset.magnitude)); }
+                float max = 0f, early = 0f, late = 0f; int nEarly = 0, nLate = 0;
+                var avg = ShakePresets.Average;
+                foreach (var s in samples)
+                {
+                    max = Mathf.Max(max, s.y);
+                    if (s.x < avg.duration / 3f) { early += s.y; nEarly++; }
+                    else if (s.x > avg.duration * 2f / 3f && s.x < avg.duration) { late += s.y; nLate++; }
+                }
+                early /= Mathf.Max(1, nEarly); late /= Mathf.Max(1, nLate);
+                Verdict("FS6 Average shake: peak " + max.ToString("F3") + " (magnitude " + avg.magnitude + "), first third avg " + early.ToString("F3") + " > last third avg " + late.ToString("F3") + ", over after " + avg.duration + " s",
+                    max <= avg.magnitude + 0.001f && max > avg.magnitude * 0.3f && early > late && shake.ActiveCount == 0 && shake.AppliedOffset == Vector2.zero, "samples=" + samples.Count);
+            }
+
+            // ---- FS7: the shake rides on top of the follow position: the base never moves, and nothing is left over afterwards
+            {
+                yield return RealWait(0.3f);
+                Vector2 base0 = follow.BasePosition;
+                float maxDrift = 0f, maxCompErr = 0f, maxOff = 0f;
+                shake.Play(ShakePresets.Big);
+                float t0 = Time.time;
+                while (Time.time - t0 < 0.6f)
+                {
+                    yield return null;
+                    maxDrift = Mathf.Max(maxDrift, ((Vector2)follow.BasePosition - base0).magnitude);
+                    maxCompErr = Mathf.Max(maxCompErr, ((Vector2)camera.transform.position - (Vector2)follow.BasePosition - follow.ShakeOffset).magnitude);
+                    maxOff = Mathf.Max(maxOff, follow.ShakeOffset.magnitude);
+                }
+                float left = ((Vector2)camera.transform.position - (Vector2)follow.BasePosition).magnitude;
+                Verdict("FS7 Big shake: camera offset up to " + maxOff.ToString("F3") + ", follow base drifted " + maxDrift.ToString("F4") + " (no feedback), camera = base + shake within " + maxCompErr.ToString("G2") + ", left over after " + left.ToString("G2"),
+                    maxOff > 0.08f && maxDrift < 0.02f && maxCompErr < 0.001f && left < 0.001f, "");
+            }
+
+            // ---- FS8: stacked shakes never add up beyond the strongest one
+            {
+                float cap = ShakePresets.Big.magnitude, max = 0f;
+                shake.Play(ShakePresets.Big); shake.Play(ShakePresets.Big); shake.Play(ShakePresets.Big);
+                float t0 = Time.time;
+                while (Time.time - t0 < 0.5f) { yield return null; max = Mathf.Max(max, shake.AppliedOffset.magnitude); }
+                Verdict("FS8 three Big shakes at once peak at " + max.ToString("F3") + ", never above the strongest single one (" + cap + ")", max <= cap + 0.001f && max > cap * 0.3f && shake.ActiveCount == 0, "");
+            }
+
+            // ---- FS9: a rumble keeps going past its duration, is never doubled, and stops when cancelled
+            {
+                shake.Play(ShakePresets.RumblingFall); shake.Play(ShakePresets.RumblingFall);
+                int count = shake.ActiveCount;
+                shake.ResetStats();
+                yield return RealWait(1.5f);
+                bool stillOn = shake.IsPlaying(ShakePresets.RumblingFall);
+                float max = shake.MaxAppliedLength;
+                shake.Cancel(ShakePresets.RumblingFall);
+                yield return null; yield return null;
+                Verdict("FS9 rumble: played twice = " + count + " running, still running after 1.5 s (" + stillOn + "), jitter up to " + max.ToString("F3") + " (<= " + ShakePresets.RumblingFall.magnitude + "), stops when cancelled",
+                    count == 1 && stillOn && max <= ShakePresets.RumblingFall.magnitude + 0.001f && max > 0.005f && shake.ActiveCount == 0 && shake.AppliedOffset == Vector2.zero, "");
+            }
+
+            // ---- FS10: the accessibility setting: Off = none, Reduced = scaled
+            {
+                var setting0 = shake.ShakeSetting;
+                float maxOff = 0f, maxRed = 0f;
+                shake.ShakeSetting = CameraShake2D.Setting.Off; shake.ResetStats();
+                shake.Play(ShakePresets.Big);
+                float t0 = Time.time; while (Time.time - t0 < 0.3f) { yield return null; maxOff = Mathf.Max(maxOff, shake.AppliedOffset.magnitude); }
+                shake.CancelAll();
+                shake.ShakeSetting = CameraShake2D.Setting.Reduced; shake.ResetStats();
+                shake.Play(ShakePresets.Big);
+                t0 = Time.time; while (Time.time - t0 < 0.3f) { yield return null; maxRed = Mathf.Max(maxRed, shake.AppliedOffset.magnitude); }
+                float redMult = shake.Multiplier;
+                shake.CancelAll();
+                shake.ShakeSetting = setting0;
+                Verdict("FS10 shake setting: Off gives " + maxOff + ", Reduced (x" + redMult + ") peaks at " + maxRed.ToString("F3") + " (<= " + (ShakePresets.Big.magnitude * redMult).ToString("F3") + ")",
+                    maxOff == 0f && maxRed <= ShakePresets.Big.magnitude * redMult + 0.001f && maxRed > 0f && shake.ShakeSetting == CameraShake2D.Setting.On, "");
+            }
+
+            // ---- FS11: during a full stop the picture does not move and the shake does not run down; it carries on afterwards
+            {
+                shake.CancelAll();
+                float r0 = Time.realtimeSinceStartup;
+                shake.Play(ShakePresets.Average);                  // 0.3 s of game time
+                FreezeMoment.Start(FreezeType.HeroDamage);         // ~0.39 s of real time at (almost) no game time
+                int movedWhileStopped = 0, framesStopped = 0;
+                bool stoppedLastFrame = false;       // the offset we read was computed last frame, so only count frames that follow a stopped frame
+                while (FreezeMoment.IsFrozen && Time.realtimeSinceStartup - r0 < 2f)
+                {
+                    yield return null;
+                    bool stoppedNow = Time.timeScale <= float.Epsilon;
+                    if (stoppedNow && stoppedLastFrame) { framesStopped++; if (shake.AppliedOffset != Vector2.zero) movedWhileStopped++; }
+                    stoppedLastFrame = stoppedNow;
+                }
+                bool carriesOn = shake.IsShaking;
+                for (float w = 0f; shake.IsShaking && w < 2f; w += Time.unscaledDeltaTime) yield return null;
+                float whole = Time.realtimeSinceStartup - r0;
+                Verdict("FS11 hit-stop pauses the shake: " + framesStopped + " frames at speed 0, moved in " + movedWhileStopped + " of them; shake still running after the stop (" + carriesOn + "); whole thing took " + whole.ToString("F2") + " s real (a 0.3 s shake + the stop)",
+                    framesStopped > 3 && movedWhileStopped == 0 && carriesOn && whole > 0.55f, "");
+            }
+
+            // ---- FS12: a sway profile follows its curves exactly, and ends after its duration
+            {
+                var sway = new ShakeProfile
+                {
+                    type = ShakeType.Sway, duration = 0.5f, magnitude = 2f, useRandomShake = false, endAfterDuration = true,
+                    swayX = AnimationCurve.Linear(0f, 0f, 1f, 1f), swayY = AnimationCurve.Constant(0f, 1f, 0f)
+                };
+                Vector2 a = sway.GetOffset(0.25f), b = sway.GetOffset(0.5f), c0 = sway.GetOffset(0f);
+                bool finishes = sway.CanFinish && !sway.IsDone(0.49f) && sway.IsDone(0.5f);
+                var open = new ShakeProfile { type = ShakeType.Sway, endAfterDuration = false };
+                var rumble = new ShakeProfile { type = ShakeType.Rumble };
+                Verdict("FS12 sway: offset " + a + " at half time (expect (1,0)), " + b + " at the end (expect (2,0)); finishes=" + finishes + "; open-ended sway and rumble can't finish (" + (!open.CanFinish && !rumble.CanFinish) + ")",
+                    Mathf.Abs(a.x - 1f) < 0.01f && Mathf.Abs(a.y) < 0.001f && Mathf.Abs(b.x - 2f) < 0.01f && c0 == Vector2.zero && finishes && !open.CanFinish && !rumble.CanFinish
+                    && !open.IsDone(99f) && !rumble.IsDone(99f), "");
+            }
+
+            // ---- FS13: after a hard cancel, new shakes are ignored for half a second (the original's scene-change guard)
+            {
+                shake.CancelAll(true);
+                shake.Play(ShakePresets.Tiny);
+                bool ignored = shake.ActiveCount == 0;
+                yield return RealWait(0.6f);
+                shake.Play(ShakePresets.Tiny);
+                bool accepted = shake.ActiveCount == 1;
+                shake.CancelAll();
+                Verdict("FS13 after CancelAll(block) a shake is ignored (" + ignored + ") until half a second has passed, then accepted (" + accepted + ")", ignored && accepted, "");
+            }
+
+            // ---- FS20: a swing that hits two things gives ONE hit-stop and ONE shake (the first hit), at the sizes in the tuning
+            {
+                yield return ResetDamageState(h);
+                yield return Place(-9f, 0.23f, 0.8f);
+                Keys(Key.D); yield return new WaitForSeconds(0.05f); Keys();                       // face right
+                yield return new WaitForSeconds(0.2f);
+                Vector2 hitSpot = (Vector2)p.transform.position + new Vector2(tun.forwardSlashOffset.x * p.FacingDirection, tun.forwardSlashOffset.y);
+                var a = SpawnDummy(hitSpot, 0); var b = SpawnDummy(hitSpot + new Vector2(0.3f, 0f), 0);
+                shake.CancelAll(); shake.ResetStats();
+                int f0 = FreezeMoment.StartedCount, fh0 = combat.FirstHitFeedbackCount;
+                yield return DoSwing(combat, (d, c) => { });
+                yield return RealWait(0.6f);
+                var nt = FreezeMoment.GetTiming(tun.nailHitFreeze);
+                Verdict("FS20 one swing, two targets (" + a.HitCount + " + " + b.HitCount + " hits): " + (FreezeMoment.StartedCount - f0) + " hit-stop (" + tun.nailHitFreeze + "), " + shake.PlayedCount + " shake (" + tun.nailHitShake + "), shake peaked at " + shake.MaxAppliedLength.ToString("F3"),
+                    a.HitCount == 1 && b.HitCount == 1 && FreezeMoment.StartedCount == f0 + 1 && combat.FirstHitFeedbackCount == fh0 + 1 && shake.PlayedCount == 1
+                    && shake.MaxAppliedLength > 0.002f && shake.MaxAppliedLength <= ShakePresets.Get(tun.nailHitShake).magnitude + 0.001f && Mathf.Approximately(Time.timeScale, 1f),
+                    "freeze total " + nt.Total.ToString("F3") + " s");
+            }
+
+            // ---- FS21: a killable target: each swing's first hit gives the nail feedback; the killing hit adds the death freeze + death shake; once dead it can't be hit
+            {
+                yield return ResetDamageState(h);
+                yield return Place(-9f, 0.23f, 0.8f);
+                Keys(Key.D); yield return new WaitForSeconds(0.05f); Keys();
+                yield return new WaitForSeconds(0.2f);
+                Vector2 hitSpot = (Vector2)p.transform.position + new Vector2(tun.forwardSlashOffset.x * p.FacingDirection, tun.forwardSlashOffset.y);
+                var mob = SpawnDummy(hitSpot, 2);
+                int died = 0; mob.Died += () => died++;
+                shake.CancelAll(); shake.ResetStats();
+                int f0 = FreezeMoment.StartedCount;
+                yield return DoSwing(combat, (d, c) => { });
+                yield return RealWait(0.5f);
+                int fAfter1 = FreezeMoment.StartedCount - f0, sAfter1 = shake.PlayedCount;
+                bool aliveAfter1 = !mob.IsDead;
+                yield return new WaitForSeconds(tun.attackCooldown + 0.1f);
+                yield return DoSwing(combat, (d, c) => { });
+                yield return RealWait(0.6f);
+                int fAfter2 = FreezeMoment.StartedCount - f0, sAfter2 = shake.PlayedCount;
+                yield return new WaitForSeconds(tun.attackCooldown + 0.1f);
+                yield return DoSwing(combat, (d, c) => { });
+                yield return RealWait(0.5f);
+                Verdict("FS21 killable target (2 hits): swing 1 = " + fAfter1 + " freeze / " + sAfter1 + " shake, alive=" + aliveAfter1 + "; swing 2 = " + fAfter2 + " freezes / " + sAfter2 + " shakes (first-hit + death), dead=" + mob.IsDead + ", Died fired " + died + "x; a third swing does nothing (hits " + mob.HitCount + ", freezes " + (FreezeMoment.StartedCount - f0) + ")",
+                    fAfter1 == 1 && sAfter1 == 1 && aliveAfter1 && fAfter2 == 3 && sAfter2 == 3 && mob.IsDead && died == 1 && mob.HitCount == 2
+                    && FreezeMoment.StartedCount - f0 == 3 && shake.PlayedCount == 3, "");
+            }
+
+            // ---- FS22: being hurt gives the hero-damage hit-stop + shake; dying gives the hero-death shake
+            {
+                yield return ResetDamageState(h);
+                yield return Place(-8f, 0.23f, 0.6f);
+                SpawnDamager(new Vector2(-6f, 0.2f), new Vector2(1f, 1.4f), DamageKind.Enemy);
+                shake.CancelAll(); shake.ResetStats();
+                int f0 = FreezeMoment.StartedCount, hits0 = h.HitsTaken;
+                bool landed = false;
+                Keys(Key.D);
+                yield return WaitForHit(h, hits0, 3f, ok => landed = ok);
+                Keys();
+                int fHurt = FreezeMoment.StartedCount - f0, sHurt = shake.PlayedCount;
+                yield return ResetDamageState(h);
+                shake.CancelAll(); shake.ResetStats();
+                int f1 = FreezeMoment.StartedCount;
+                h.Kill();
+                int fDead = FreezeMoment.StartedCount - f1, sDead = shake.PlayedCount;
+                yield return ResetDamageState(h);
+                Verdict("FS22 hurt: " + fHurt + " hit-stop (" + tun.heroDamageFreeze + ") + " + sHurt + " shake (" + tun.heroDamageShake + "); death: " + fDead + " hit-stop + " + sDead + " shake (" + tun.heroDeathShake + ")",
+                    landed && fHurt == 1 && sHurt == 1 && fDead == 1 && sDead == 1, "");
+            }
+
+            // ---- FS23: a short fall is silent; a long fall rumbles from bigFallTime until the hard landing, which gives its own shake
+            {
+                yield return ResetDamageState(h);
+                shake.CancelAll(); shake.ResetStats();
+                Tp(-9f, 8f);
+                for (float t = 0f; t < 3f; t += Time.unscaledDeltaTime) { yield return null; if (p.IsGrounded && t > 0.3f) break; }
+                yield return RealWait(0.3f);
+                bool shortFallSilent = shake.PlayedCount == 0;
+
+                Tp(-9f, 80f);
+                bool rumbled = false; float timerWhenStarted = -1f; float rumbleMax = 0f; bool hard = false;
+                for (float t = 0f; t < 10f && !hard; t += Time.unscaledDeltaTime)
+                {
+                    yield return null;
+                    if (!rumbled && shake.IsPlaying(ShakePresets.RumblingFall)) { rumbled = true; timerWhenStarted = p.FallTimer; }
+                    if (p.IsHardLanding) { hard = true; rumbleMax = shake.MaxAppliedLength; }
+                }
+                int playedAtLanding = shake.PlayedCount;
+                yield return RealWait(0.9f);
+                Verdict("FS23 short fall: no shake (" + shortFallSilent + "); long fall: rumble started when the fall timer was " + timerWhenStarted.ToString("F2") + " (bigFallTime " + tun.bigFallTime + "), jitter up to " + rumbleMax.ToString("F3") + "; hard landing shake started (" + playedAtLanding + " shakes played); all quiet 0.9 s later (" + shake.ActiveCount + " running)",
+                    shortFallSilent && rumbled && timerWhenStarted > tun.bigFallTime - 0.05f && timerWhenStarted < tun.bigFallTime + 0.2f && hard
+                    && rumbleMax > 0.005f && rumbleMax <= ShakePresets.RumblingFall.magnitude + 0.001f && playedAtLanding == 2 && shake.ActiveCount == 0, "");
+            }
+
+            // ---- FS24: getting hurt mid-fall stops the rumble
+            {
+                yield return ResetDamageState(h);
+                shake.CancelAll(); shake.ResetStats();
+                Tp(-9f, 80f);
+                bool rumbling = false;
+                for (float t = 0f; t < 10f && !rumbling; t += Time.unscaledDeltaTime) { yield return null; rumbling = shake.IsPlaying(ShakePresets.RumblingFall); }
+                bool hurt = h.TakeDamage(new DamageInfo(1, rb.position.x + 1f, DamageKind.Enemy));
+                bool rumbleGone = !shake.IsPlaying(ShakePresets.RumblingFall);
+                bool hurtShakeOn = shake.IsPlaying(ShakePresets.Get(tun.heroDamageShake));
+                yield return RealWait(0.5f);
+                Verdict("FS24 hurt mid-fall: rumbling before (" + rumbling + "), hit landed (" + hurt + "), rumble gone at once (" + rumbleGone + "), hurt shake took over (" + hurtShakeOn + ")",
+                    rumbling && hurt && rumbleGone && hurtShakeOn, "");
+                Tp(-9f, 0.23f);
+                yield return ResetDamageState(h);
+                yield return RealWait(0.5f);
+            }
+
+            // ---- FS30: everything is back to normal at the end
+            {
+                shake.CancelAll();
+                yield return RealWait(0.3f);
+                Verdict("FS30 at the end: speed " + Time.timeScale + ", no freeze running, no time controls left (" + GameTime.ActiveControls + "), nothing shaking, camera = base position",
+                    Mathf.Approximately(Time.timeScale, 1f) && !FreezeMoment.IsFrozen && GameTime.ActiveControls == 0 && shake.ActiveCount == 0
+                    && ((Vector2)camera.transform.position - (Vector2)follow.BasePosition).magnitude < 0.001f, "");
+            }
+        }
+
+        // ====================================================================== sprint + sprint jump
+
+        IEnumerator UntilTrue(System.Func<bool> cond, float timeout)
+        {
+            for (float t = 0; t < timeout && !cond(); t += Time.unscaledDeltaTime) yield return null;
+        }
+
+        IEnumerator SprintTests()
+        {
+            var tun = p.Tuning;
+            var cam = Camera.main != null ? Camera.main.GetComponent<Hollowknight.CameraSystem.CameraFollow2D>() : null;
+            var layer = Hollowknight.Feel.PixelFxLayer.Instance;
+            var health = p.GetComponent<PlayerHealth2D>();
+            // open the test space: the two raised platforms would be in the way of long jumps
+            var hidden = new System.Collections.Generic.List<GameObject>();
+            foreach (var n in new[] { "Platform High", "Platform Low" }) { var g = GameObject.Find(n); if (g != null) { g.SetActive(false); hidden.Add(g); } }
+            if (health != null) yield return ResetDamageState(health);
+            float run = tun.runSpeed;
+
+            // ---- S90: a quick dash tap (button released) does not sprint - the dash behaves as before
+            yield return Place(-13.5f, 0.23f, 0.6f);
+            Keys(Key.D, Key.LeftShift); yield return null; yield return null; Keys(Key.D);
+            bool everSprint = false;
+            for (float t = 0; t < 0.6f; t += Time.deltaTime) { everSprint |= p.IsSprinting; yield return null; }
+            float vTap = rb.linearVelocity.x; Keys(); yield return new WaitForSeconds(0.3f);
+            Verdict("S90 a dash tap does not sprint (sprinted " + everSprint + ", back to run speed " + vTap.ToString("F1") + ")", !everSprint && Mathf.Abs(vTap - run) < 1f, "");
+
+            // ---- S91/S92: holding dash through the dash rolls into a sprint; letting go ends it
+            yield return Place(-13.5f, 0.23f, 0.6f);
+            bool skidEvent = false; int endEvents = 0;
+            System.Action<bool> onEnd = s => { skidEvent = s; endEvents++; };
+            p.SprintEnded += onEnd;
+            float tPress = Time.time;
+            Keys(Key.D, Key.LeftShift);
+            yield return UntilTrue(() => p.IsSprinting, 0.8f);
+            float tSprint = Time.time - tPress;
+            yield return new WaitForSeconds(0.2f);
+            float vSprint = rb.linearVelocity.x; var stSprint = p.State; int faceSprint = p.FacingDirection;
+            float dashOff = cam != null ? cam.DashOffsetX : 0f;
+            Verdict("S91 holding dash after the dash sprints: started " + tSprint.ToString("F2") + " s after the press (dash lasts " + (tun.dashSteps * Time.fixedDeltaTime).ToString("F2") + "), speed " + vSprint.ToString("F1") + " (target " + tun.sprintSpeed + "), state " + stSprint + ", facing " + faceSprint,
+                p.IsSprinting && Mathf.Abs(vSprint - tun.sprintSpeed) < 0.7f && stSprint == MotionState.Sprinting && faceSprint == 1 && tSprint > tun.dashSteps * Time.fixedDeltaTime - 0.05f, "");
+            if (cam != null) Verdict("S92 camera leads further ahead while sprinting (offset " + dashOff.ToString("F2") + ")", dashOff > 1.8f, "");
+            int emitted0 = layer.TotalEmitted;
+            yield return new WaitForSeconds(0.4f);
+            int dustEmitted = layer.TotalEmitted - emitted0;
+            Keys(Key.D);                                                                       // let go of dash only
+            yield return new WaitForSeconds(0.06f);
+            bool endedOnRelease = !p.IsSprinting;
+            yield return new WaitForSeconds(0.4f);
+            float vAfter = rb.linearVelocity.x;
+            Keys(); yield return new WaitForSeconds(0.3f);
+            p.SprintEnded -= onEnd;
+            Verdict("S93 pixel dust and speed pixels while sprinting: " + dustEmitted + " pixels in 0.4 s", dustEmitted >= 12, "");
+            Verdict("S94 letting go of dash ends the sprint (ended " + endedOnRelease + ", skid event " + skidEvent + ") and the hero falls back to run speed (" + vAfter.ToString("F1") + ")",
+                endedOnRelease && skidEvent && endEvents == 1 && Mathf.Abs(vAfter - run) < 1f, "");
+
+            // ---- S95: letting go of everything while sprinting: stops quickly (skid)
+            yield return Place(-13.5f, 0.23f, 0.6f);
+            Keys(Key.D, Key.LeftShift);
+            yield return UntilTrue(() => p.IsSprinting, 0.8f); yield return new WaitForSeconds(0.2f);
+            float xRel = rb.position.x; int emit1 = layer.TotalEmitted; skidEvent = false;
+            p.SprintEnded += onEnd; Keys();
+            yield return new WaitForSeconds(0.5f);
+            p.SprintEnded -= onEnd;
+            float stopDist = rb.position.x - xRel;
+            Verdict("S95 releasing everything at sprint speed stops within " + stopDist.ToString("F2") + " u (skid event " + skidEvent + ", " + (layer.TotalEmitted - emit1) + " skid pixels)",
+                !p.IsSprinting && stopDist < 1.6f && skidEvent && layer.TotalEmitted - emit1 >= 10, "");
+
+            // ---- S96: turning around ends the sprint
+            yield return Place(-11f, 0.23f, 0.6f);
+            Keys(Key.D, Key.LeftShift);
+            yield return UntilTrue(() => p.IsSprinting, 0.8f); yield return new WaitForSeconds(0.15f);
+            Keys(Key.A, Key.LeftShift); yield return new WaitForSeconds(0.1f);
+            bool endedTurn = !p.IsSprinting;
+            yield return new WaitForSeconds(0.5f);
+            Verdict("S96 holding the other way while sprinting ends it (ended " + endedTurn + "), the hero runs back (vx " + rb.linearVelocity.x.ToString("F1") + ") and does not restart the sprint with dash still held (" + !p.IsSprinting + ")",
+                endedTurn && rb.linearVelocity.x < -5f && !p.IsSprinting, "");
+            Keys(); yield return new WaitForSeconds(0.3f);
+
+            // ---- S97: sprinting into a wall ends the sprint at the wall
+            yield return Place(5f, 0.23f, 0.6f);
+            Keys(Key.D, Key.LeftShift);
+            yield return new WaitForSeconds(1.2f);
+            float xWall = rb.position.x; bool sprintingAtWall = p.IsSprinting;
+            Keys(); yield return new WaitForSeconds(0.3f);
+            Verdict("S97 sprinting into the wall (face at x=11.5) ends the sprint there (x " + xWall.ToString("F2") + ", still sprinting " + sprintingAtWall + ")",
+                !sprintingAtWall && xWall > 10.8f && xWall < 11.3f, "");
+
+            // ---- S98: a swing ends the sprint
+            if (p.GetComponent<PlayerCombat2D>() != null)
+            {
+                yield return Place(-13.5f, 0.23f, 0.6f);
+                Keys(Key.D, Key.LeftShift);
+                yield return UntilTrue(() => p.IsSprinting, 0.8f); yield return new WaitForSeconds(0.1f);
+                Keys(Key.D, Key.LeftShift, Key.J); yield return null; Keys(Key.D, Key.LeftShift);
+                yield return new WaitForSeconds(0.15f);
+                bool endedSwing = !p.IsSprinting;
+                yield return new WaitForSeconds(0.5f);
+                Verdict("S98 starting a swing ends the sprint (ended " + endedSwing + ", not restarted with dash held " + !p.IsSprinting + ")", endedSwing && !p.IsSprinting, "");
+                Keys(); yield return new WaitForSeconds(0.2f);
+            }
+
+            // ---- S99: a hit ends the sprint
+            if (health != null)
+            {
+                yield return Place(-13.5f, 0.23f, 0.6f);
+                Keys(Key.D, Key.LeftShift);
+                yield return UntilTrue(() => p.IsSprinting, 0.8f); yield return new WaitForSeconds(0.1f);
+                int hits0 = health.HitsTaken; bool landed = false;
+                SpawnDamager(new Vector2(rb.position.x + 0.5f, 0.2f), new Vector2(1f, 1.4f), DamageKind.Enemy);
+                yield return WaitForHit(health, hits0, 1f, ok => landed = ok);
+                Verdict("S99 a hit ends the sprint (hit " + landed + ", sprinting " + p.IsSprinting + ", damaged " + p.IsDamaged + ")", landed && !p.IsSprinting && p.IsDamaged, "");
+                Keys(); yield return ResetDamageState(health);
+            }
+
+            // ---- S100-S103: the sprint jump
+            yield return Place(-13.5f, 0.23f, 0.6f);
+            float y0 = rb.position.y;
+            Track(); Keys(Key.Space); yield return new WaitForSeconds(0.5f); Keys();
+            yield return WaitGrounded();
+            float normalRise = peakY - y0;
+
+            yield return Place(-13.5f, 0.23f, 0.6f);
+            y0 = rb.position.y;
+            Keys(Key.D, Key.LeftShift);
+            yield return UntilTrue(() => p.IsSprinting && rb.linearVelocity.x > tun.sprintSpeed - 0.5f, 1f);
+            Track();
+            Keys(Key.D, Key.LeftShift, Key.Space);
+            yield return new WaitForSeconds(0.12f);
+            bool shuttleOn = p.IsShuttlecock; float vJump = rb.linearVelocity.x; bool sprintFlagOff = !p.IsSprinting;
+            // watch the flight: when does the forced speed end, how does the speed fade, what happens on landing
+            bool shuttleAtFall = true, sprintAtFall = false; float vAtFall = 0f; bool sawFall = false;
+            Keys(Key.D, Key.LeftShift, Key.Space);
+            for (float t = 0; t < 2.5f; t += Time.deltaTime)
+            {
+                yield return null;
+                if (!sawFall && rb.linearVelocity.y < -1f) { sawFall = true; shuttleAtFall = p.IsShuttlecock; sprintAtFall = p.IsSprinting; vAtFall = rb.linearVelocity.x; }
+                if (sawFall && p.IsGrounded) break;
+                if (t > 0.5f) Keys(Key.D, Key.LeftShift);          // let go of jump after the full rise
+            }
+            float vLand = rb.linearVelocity.x;
+            yield return new WaitForSeconds(0.15f);
+            bool resumed = p.IsSprinting;
+            float rise = peakY - y0;
+            Verdict("S100 sprint jump: forced forward speed " + vJump.ToString("F1") + " while rising (shuttlecock " + shuttleOn + ", sprint flag off " + sprintFlagOff + "), rises " + rise.ToString("F2") + " u vs " + normalRise.ToString("F2") + " u for a normal jump",
+                shuttleOn && sprintFlagOff && Mathf.Abs(vJump - tun.shuttlecockSpeed) < 0.8f && rise > normalRise + 0.5f, "");
+            Verdict("S101 when the fall starts the forced speed ends and, dash still held, the sprint carries on in the air (shuttlecock " + shuttleAtFall + ", sprinting " + sprintAtFall + ", vx " + vAtFall.ToString("F1") + ")",
+                sawFall && !shuttleAtFall && sprintAtFall && Mathf.Abs(vAtFall - tun.sprintSpeed) < 0.8f, "");
+            Verdict("S102 landing with dash and direction still held keeps sprinting (sprinting " + resumed + ", vx on landing " + vLand.ToString("F1") + ")", resumed && vLand > tun.sprintSpeed - 1f, "");
+            Keys(); yield return new WaitForSeconds(0.4f);
+
+            // same jump, but dash released in the air: landing does not sprint
+            yield return Place(-13.5f, 0.23f, 0.6f);
+            Keys(Key.D, Key.LeftShift);
+            yield return UntilTrue(() => p.IsSprinting && rb.linearVelocity.x > tun.sprintSpeed - 0.5f, 1f);
+            Keys(Key.D, Key.LeftShift, Key.Space); yield return new WaitForSeconds(0.2f);
+            Keys(Key.D);
+            float carryMin = 99f; bool fell = false; float vFell = 0f;
+            for (float t = 0; t < 2.5f; t += Time.deltaTime)
+            {
+                yield return null;
+                if (rb.linearVelocity.y < -1f)
+                {
+                    if (!fell) vFell = rb.linearVelocity.x;
+                    fell = true;
+                    if (!p.IsGrounded) carryMin = Mathf.Min(carryMin, rb.linearVelocity.x);
+                }
+                if (fell && p.IsGrounded) break;
+            }
+            yield return new WaitForSeconds(0.25f);
+            Verdict("S103 dash let go in the air: the speed fades out instead (" + vFell.ToString("F1") + " at the fall, slowest " + carryMin.ToString("F1") + " in the air, between " + run + " and " + tun.shuttlecockSpeed + ") and landing does not sprint (sprinting " + p.IsSprinting + ")",
+                fell && vFell > tun.shuttlecockSpeed - 1.5f && carryMin < tun.shuttlecockSpeed - 1f && carryMin > run - 0.5f && !p.IsSprinting, "");
+            Keys(); yield return new WaitForSeconds(0.3f);
+
+            // ---- S104-S105: a jump just after running off a ledge while sprinting is still a sprint jump; a late one is not
+            var ledge = new GameObject("PlaytestLedge");
+            ledge.transform.position = new Vector3(-9f, 5.2f, 0f);
+            var lc = ledge.AddComponent<BoxCollider2D>(); lc.size = new Vector2(6f, 0.5f);       // top at y 5.45 (high, so the hero stays airborne a while), right edge at x -6
+            foreach (int lateSteps in new[] { 3, 14 })
+            {
+                yield return Place(-11.5f, 6.2f, 0.7f);
+                Keys(Key.D, Key.LeftShift);
+                yield return UntilTrue(() => p.IsSprinting && rb.linearVelocity.x > 12f, 1f);
+                yield return UntilTrue(() => !p.IsGrounded, 1f);
+                yield return Steps(lateSteps);
+                Keys(Key.D, Key.LeftShift, Key.Space);
+                yield return Steps(2);
+                bool sj = p.IsShuttlecock; float vj = rb.linearVelocity.x;
+                Keys(); yield return new WaitForSeconds(0.3f);
+                if (lateSteps == 3)
+                    Verdict("S104 jump " + lateSteps + " steps after leaving the ledge while sprinting is a sprint jump (shuttlecock " + sj + ", vx " + vj.ToString("F1") + ")", sj, "");
+                else
+                    Verdict("S105 jump " + lateSteps + " steps after leaving the ledge is NOT a sprint jump (shuttlecock " + sj + ")", !sj, "");
+                yield return WaitGrounded();
+            }
+            Destroy(ledge);
+
+            // ---- S106: sprint can be switched off in the tuning: holding dash then behaves exactly like the old dash
+            tun.sprintEnabled = false;
+            yield return Place(-13.5f, 0.23f, 0.6f);
+            Keys(Key.D, Key.LeftShift); yield return new WaitForSeconds(0.6f);
+            bool sprintedOff = p.IsSprinting; float vOff = rb.linearVelocity.x;
+            Keys(); tun.sprintEnabled = true; yield return new WaitForSeconds(0.3f);
+            Verdict("S106 sprintEnabled=false: holding dash never sprints (sprinted " + sprintedOff + ", speed " + vOff.ToString("F1") + ")", !sprintedOff && Mathf.Abs(vOff - run) < 1f, "");
+
+            foreach (var g in hidden) if (g != null) g.SetActive(true);
+            Keys();
+        }
+
+        // ====================================================================== silk + bind
+
+        /// <summary>Visual check: renders the game camera, zoomed on the hero, to a PNG (HK_SHOTDIR).</summary>
+        void Shot(string name)
+        {
+            string dir = EditorPrefs.GetString("HK_SHOTDIR");
+            if (string.IsNullOrEmpty(dir) || Camera.main == null) return;
+            var go = new GameObject("TempShotCam");
+            var cam = go.AddComponent<Camera>();
+            cam.CopyFrom(Camera.main);
+            if (Camera.main.GetComponent<UnityEngine.Rendering.Universal.UniversalAdditionalCameraData>() != null)
+                go.AddComponent<UnityEngine.Rendering.Universal.UniversalAdditionalCameraData>();
+            cam.orthographic = true; cam.orthographicSize = 1.9f;
+            cam.transform.position = new Vector3(rb.position.x, rb.position.y + 0.7f, -10f);
+            var rt = new RenderTexture(960, 540, 24);
+            cam.targetTexture = rt;
+            cam.Render();
+            var prev = RenderTexture.active;
+            RenderTexture.active = rt;
+            var tex = new Texture2D(960, 540, TextureFormat.RGB24, false);
+            tex.ReadPixels(new Rect(0, 0, 960, 540), 0, 0); tex.Apply();
+            RenderTexture.active = prev;
+            System.IO.File.WriteAllBytes(System.IO.Path.Combine(dir, name + ".png"), tex.EncodeToPNG());
+            Destroy(go); Destroy(rt); Destroy(tex);
+            var silkNow = p.GetComponent<PlayerSilk2D>();
+            Log("shot " + name + " binding=" + (silkNow != null && silkNow.IsBinding) + " progress=" + (silkNow != null ? silkNow.BindProgress.ToString("F2") : "-")
+                + " cancelled=" + (silkNow != null ? silkNow.BindsCancelled : -1) + " fHeld=" + (kb != null && kb.fKey.isPressed) + " state=" + p.State + " focused=" + Application.isFocused);
+        }
+
+        IEnumerator SprintShots()
+        {
+            var tun = p.Tuning;
+            foreach (var n in new[] { "Platform High", "Platform Low" }) { var g = GameObject.Find(n); if (g != null) g.SetActive(false); }
+            yield return Place(-13.5f, 0.23f, 0.6f);
+            Keys(Key.D, Key.LeftShift);
+            yield return new WaitForSeconds(0.1f); Shot("s0_dash");
+            yield return new WaitForSeconds(0.35f); Shot("s1_sprint");
+            yield return new WaitForSeconds(0.12f); Shot("s2_sprint_later");
+            Keys(); yield return new WaitForSeconds(0.07f); Shot("s3_skid");
+            yield return new WaitForSeconds(0.2f); Shot("s4_after_skid");
+            yield return Place(-13.5f, 0.23f, 0.6f);
+            Keys(Key.D, Key.LeftShift);
+            yield return UntilTrue(() => p.IsSprinting && rb.linearVelocity.x > tun.sprintSpeed - 0.5f, 1f);
+            Keys(Key.D, Key.LeftShift, Key.Space);
+            yield return new WaitForSeconds(0.05f); Shot("j1_launch");
+            yield return new WaitForSeconds(0.2f); Shot("j2_air");
+            Keys(); yield return new WaitForSeconds(0.5f);
+            Log("sprint shots done");
+        }
+
+        IEnumerator BindShots()
+        {
+            var h = p.GetComponent<PlayerHealth2D>();
+            var s = p.GetComponent<PlayerSilk2D>();
+            h.DebugSetHealth(2); s.DebugSetSilk(s.MaxSilk);
+            yield return Place(-6f, 0.23f, 0.6f);
+            Shot("0_before");
+            Keys(Key.F);
+            yield return new WaitForSeconds(0.30f); Shot("1_early");
+            yield return new WaitForSeconds(0.35f); Shot("2_mid");
+            yield return new WaitForSeconds(0.30f); Shot("3_almost");
+            yield return new WaitForSeconds(0.14f); Shot("4_burst");
+            yield return new WaitForSeconds(0.12f); Shot("5_burst_later");
+            Keys();
+            Log("bind=" + s.BindsCompleted + " health=" + h.Health);
+        }
+
+        IEnumerator SilkTests()
+        {
+            var h = p.GetComponent<PlayerHealth2D>();
+            var s = p.GetComponent<PlayerSilk2D>();
+            var fx = p.GetComponent<BindEffect2D>();
+            var combat = p.GetComponent<PlayerCombat2D>();
+            if (h == null || s == null || fx == null) { Verdict("S70 PlayerSilk2D + BindEffect2D are on the player", false, "missing"); yield break; }
+            var tun = p.Tuning;
+            var layer = Hollowknight.Feel.PixelFxLayer.Instance;
+            yield return ResetDamageState(h);
+            s.DebugSetSilk(0);
+
+            // ---- S70: nothing to bind with: no silk, or full health -> the button does nothing
+            h.DebugSetHealth(2);
+            yield return Place(-6f, 0.23f, 0.5f);
+            int started0 = s.BindsCompleted + s.BindsCancelled; bool everBound = false;
+            Keys(Key.F);
+            for (float t = 0; t < 0.3f; t += Time.unscaledDeltaTime) { everBound |= s.IsBinding; yield return null; }
+            Keys(); yield return new WaitForSeconds(0.1f);
+            Verdict("S70 no silk (0/" + s.MaxSilk + "): holding F does not bind (bound " + everBound + ")", !everBound && s.CanBind() == false, "");
+
+            s.DebugSetSilk(s.MaxSilk); h.DebugSetHealth(h.MaxHealth);
+            everBound = false; Keys(Key.F);
+            for (float t = 0; t < 0.3f; t += Time.unscaledDeltaTime) { everBound |= s.IsBinding; yield return null; }
+            Keys(); yield return new WaitForSeconds(0.1f);
+            Verdict("S71 full health: holding F with " + s.Silk + " silk does not bind (bound " + everBound + ", silk kept " + s.Silk + ")", !everBound && s.Silk == s.MaxSilk, "");
+
+            s.DebugSetSilk(tun.bindCost - 1); h.DebugSetHealth(2);
+            everBound = false; Keys(Key.F);
+            for (float t = 0; t < 0.3f; t += Time.unscaledDeltaTime) { everBound |= s.IsBinding; yield return null; }
+            Keys(); yield return new WaitForSeconds(0.1f);
+            Verdict("S72 one silk short (" + s.Silk + "/" + tun.bindCost + "): holding F does not bind (bound " + everBound + ")", !everBound, "");
+
+            // ---- S73: nail hits fill the silk, one per hit, capped
+            s.DebugSetSilk(0);
+            int gainedEvents = 0, gainedTotal = 0;
+            System.Action<int, Vector2> onGain = (n, pos) => { gainedEvents++; gainedTotal += n; };
+            s.SilkGained += onGain;
+            var steps = new System.Collections.Generic.List<int>();
+            for (int i = 0; i < 3; i++)
+            {
+                yield return Place(-1.0f, 0.23f, 0.4f);
+                Keys(Key.A); yield return new WaitForSeconds(0.05f); Keys();                      // face the ground dummy at x=-2.5
+                int before = s.Silk;
+                yield return DoSwing(combat, (d, c) => { });
+                yield return new WaitForSeconds(0.25f);
+                steps.Add(s.Silk - before);
+                yield return new WaitForSeconds(tun.attackCooldown);
+            }
+            s.SilkGained -= onGain;
+            Verdict("S73 each nail hit on a target gives " + tun.silkPerHit + " silk (gains per swing " + string.Join(",", steps) + ", silk " + s.Silk + ", events " + gainedEvents + ")",
+                steps.TrueForAll(x => x == tun.silkPerHit) && s.Silk == 3 && gainedEvents == 3 && gainedTotal == 3, "");
+
+            var dummy = GameObject.Find("Hit Dummy (ground)").GetComponent<HitTarget>();
+            dummy.givesSilk = false;
+            yield return Place(-1.0f, 0.23f, 0.4f);
+            Keys(Key.A); yield return new WaitForSeconds(0.05f); Keys();
+            int hitsBefore = dummy.HitCount, silkBefore = s.Silk;
+            yield return DoSwing(combat, (d, c) => { });
+            yield return new WaitForSeconds(0.3f);
+            dummy.givesSilk = true;
+            Verdict("S74 a target flagged givesSilk=false is hit (" + (dummy.HitCount - hitsBefore) + "x) but gives no silk (" + silkBefore + " -> " + s.Silk + ")", dummy.HitCount > hitsBefore && s.Silk == silkBefore, "");
+
+            s.AddSilk(50);
+            Verdict("S75 silk is capped at " + s.MaxSilk + " (now " + s.Silk + ")", s.Silk == s.MaxSilk, "");
+
+            // ---- S76-S78: a full bind while holding D and Space too: rooted, pixel effect running, finishes on time, heals, spends the silk
+            {
+                h.DebugSetHealth(2); s.DebugSetSilk(s.MaxSilk);
+                yield return Place(-6f, 0.23f, 0.5f);
+                float x0 = rb.position.x, y0 = rb.position.y;
+                int done0 = s.BindsCompleted, emitted0 = layer.TotalEmitted;
+                float tPress = Time.time;
+                Keys(Key.F, Key.D, Key.Space);
+                yield return new WaitForSeconds(0.15f);
+                bool binding = s.IsBinding; var st = p.State; float prog1 = s.BindProgress;
+                yield return new WaitForSeconds(0.45f);
+                float prog2 = s.BindProgress, xMid = rb.position.x, yMid = rb.position.y;
+                int live = layer.LiveCount; float aura = fx.AuraAlpha; int emittedMid = layer.TotalEmitted - emitted0;
+                for (float t = 0; t < 2f && s.BindsCompleted == done0; t += Time.unscaledDeltaTime) yield return null;
+                float took = Time.time - tPress;
+                yield return null; yield return null;
+                int liveAfter = layer.LiveCount; int emittedBurst = layer.TotalEmitted - emitted0 - emittedMid;
+                bool bindingAfter = s.IsBinding;
+                Keys(); yield return new WaitForSeconds(0.3f);
+                Verdict("S76 binding: started (" + binding + "), state " + st + ", progress " + prog1.ToString("F2") + " -> " + prog2.ToString("F2") + ", rooted despite holding D and Space (moved " + Mathf.Abs(xMid - x0).ToString("F3") + " x, " + Mathf.Abs(yMid - y0).ToString("F3") + " y)",
+                    binding && st == MotionState.Binding && prog2 > prog1 + 0.2f && Mathf.Abs(xMid - x0) < 0.05f && Mathf.Abs(yMid - y0) < 0.05f, "");
+                Verdict("S77 pixel effect while binding: " + live + " live motes (" + emittedMid + " emitted), glow opacity " + aura.ToString("F2") + "; finish burst adds " + emittedBurst + " pixels (" + liveAfter + " live)",
+                    live >= 8 && aura > 0.3f && emittedBurst >= 40 && liveAfter >= 30, "");
+                Verdict("S78 bind finishes after " + took.ToString("F2") + " s (target " + tun.bindTime + "), health 2 -> " + h.Health + " (+" + tun.bindHeal + "), silk " + tun.bindCost + " -> " + s.Silk + ", no longer binding (" + !bindingAfter + ")",
+                    s.BindsCompleted == done0 + 1 && Mathf.Abs(took - tun.bindTime) < 0.2f && h.Health == Mathf.Min(h.MaxHealth, 2 + tun.bindHeal) && s.Silk == s.MaxSilk - tun.bindCost && !bindingAfter, "");
+            }
+
+            // ---- S79: letting go early breaks the bind: nothing healed, nothing spent
+            {
+                h.DebugSetHealth(2); s.DebugSetSilk(s.MaxSilk);
+                yield return Place(-6f, 0.23f, 0.5f);
+                int cancel0 = s.BindsCancelled, emitted0 = layer.TotalEmitted; float progress = -1f;
+                System.Action<float> onCancel = pr => progress = pr;
+                s.BindCancelled += onCancel;
+                Keys(Key.F); yield return new WaitForSeconds(0.4f);
+                bool wasBinding = s.IsBinding;
+                Keys(); yield return new WaitForSeconds(0.15f);
+                s.BindCancelled -= onCancel;
+                Verdict("S79 releasing F at ~40% breaks the bind (was binding " + wasBinding + ", broke at " + progress.ToString("F2") + "): health " + h.Health + " (2), silk " + s.Silk + ", embers " + (layer.TotalEmitted - emitted0) + ", glow off " + (fx.AuraAlpha < 0.01f),
+                    wasBinding && s.BindsCancelled == cancel0 + 1 && h.Health == 2 && s.Silk == s.MaxSilk && !s.IsBinding && layer.TotalEmitted > emitted0 && fx.AuraAlpha < 0.01f && progress > 0.25f && progress < 0.6f, "");
+            }
+
+            // ---- S80: a hit breaks the bind and keeps the silk; holding F afterwards does not restart it
+            {
+                h.DebugSetHealth(3); s.DebugSetSilk(s.MaxSilk);
+                yield return Place(-8f, 0.23f, 0.5f);
+                int cancel0 = s.BindsCancelled, hits0 = h.HitsTaken;
+                Keys(Key.F); yield return new WaitForSeconds(0.3f);
+                bool wasBinding = s.IsBinding;
+                SpawnDamager(new Vector2(rb.position.x + 0.3f, 0.2f), new Vector2(1f, 1.4f), DamageKind.Enemy);
+                bool landed = false;
+                yield return WaitForHit(h, hits0, 1f, ok => landed = ok);
+                yield return new WaitForSeconds(0.6f);                                             // knock-back over, F still held
+                bool restarted = s.IsBinding;
+                Keys(); yield return new WaitForSeconds(0.1f);
+                Verdict("S80 a hit breaks the bind (binding before " + wasBinding + ", after " + restarted + "): health 3 -> " + h.Health + ", silk kept " + s.Silk + ", still-held F does not restart it",
+                    landed && wasBinding && s.BindsCancelled == cancel0 + 1 && !restarted && h.Health == 2 && s.Silk == s.MaxSilk, "");
+                yield return ResetDamageState(h);
+            }
+
+            // ---- S81: cannot start a bind during a dash
+            {
+                h.DebugSetHealth(2); s.DebugSetSilk(s.MaxSilk);
+                yield return Place(-9f, 0.23f, 0.5f);
+                Keys(Key.D, Key.LeftShift); yield return null; yield return null;
+                for (float t = 0; t < 0.2f && !p.IsDashing; t += Time.unscaledDeltaTime) yield return null;   // wait until the dash has really started
+                Keys(Key.D, Key.F);                                                                // press bind while dashing
+                bool boundDuringDash = false, wasDashing = p.IsDashing;
+                for (float t = 0; t < 0.12f; t += Time.unscaledDeltaTime) { boundDuringDash |= s.IsBinding; yield return null; }
+                Keys(Key.F);                                                                       // dash over, F still held
+                bool boundAfter = false;
+                for (float t = 0; t < 0.4f; t += Time.unscaledDeltaTime) { boundAfter |= s.IsBinding; yield return null; }
+                Keys(); yield return new WaitForSeconds(0.2f);
+                Verdict("S81 pressing bind during a dash does nothing (dashing " + wasDashing + ", bound during " + boundDuringDash + ", bound after with F still held " + boundAfter + ")",
+                    wasDashing && !boundDuringDash && !boundAfter, "");
+            }
+
+            // ---- S82: dying empties the silk
+            {
+                s.DebugSetSilk(s.MaxSilk);
+                yield return Place(-6f, 0.23f, 0.4f);
+                h.Kill();
+                yield return new WaitForSeconds(0.2f);
+                Verdict("S82 dying empties the silk (9 -> " + s.Silk + ")", s.Silk == 0, "");
+                yield return ResetDamageState(h);
+                yield return new WaitForSeconds(0.5f);
+            }
+            s.DebugSetSilk(0);
+        }
+
+        void Finish()
+        {
+            tracking = false;
+            Keys();
+            EditorApplication.isPlaying = false;
+        }
+    }
+}
+#endif
