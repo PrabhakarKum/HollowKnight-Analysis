@@ -1,0 +1,96 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d8e277cc5f81d6d4f9c59fc11ee8f04a, type: 3}
+  m_Name: Brawler
+  m_EditorClassIdentifier: 
+  kind: 2
+  maxHealth: 5000
+  hitKnockback: {x: 3.5, y: 2.5}
+  hurtTime: 0.25
+  walkSpeed: 2.4
+  chaseSpeed: 5.2
+  acceleration: 40
+  gravityScale: 4
+  sightRange: 8
+  sightHeight: 3.5
+  loseSightTime: 2.5
+  patrolRange: 3
+  patrolPause: 0.8
+  canDropLedges: 0
+  rangedMin: 4
+  rangedMax: 8
+  damage: 1
+  telegraphTime: 0.35
+  activeTime: 0.2
+  recoverTime: 0.55
+  cooldown: 0.4
+  moves:
+  - clip: PunchA
+    clipLength: 0.375
+    strikeTime: 0.125
+    startRange: 1.15
+    hitDelay: 0.04
+    hitWindow: 0.08
+    hitSpeed: 0.75
+    swingSpeed: 1
+    pullBack: 0.16
+    limbReach: 1.06
+    hitSize: {x: 0.65, y: 0.7}
+    hitOffset: {x: 0.575, y: -0.08}
+  - clip: KickA
+    clipLength: 0.5625
+    strikeTime: 0.0625
+    startRange: 0.95
+    hitDelay: 0.05
+    hitWindow: 0.12
+    hitSpeed: 1.25
+    swingSpeed: 1.25
+    pullBack: 0.19
+    limbReach: 0.84
+    hitSize: {x: 0.52, y: 0.6}
+    hitOffset: {x: 0.46, y: 0.5}
+  shot:
+    windupClip: 
+    windupClipLength: 0.4
+    windupTo: 0.4
+    windupLean: 0
+    clip: 
+    clipLength: 0.3
+    releaseTime: 0.1
+    leadIn: 0.05
+    speed: 1
+  projectileSpeed: 14
+  projectileGravity: 0
+  burstCount: 1
+  burstGap: 0.14
+  muzzleOffset: {x: 0.9, y: 0.15}
+  boomerangDistance: 0
+  canJump: 1
+  jumpCooldown: 0.9
+  maxJumpHeight: 3.2
+  jumpForwardSpeed: 6
+  contactDamage: 1
+  bodyMid: {r: 0.8, g: 0.28, b: 0.14, a: 1}
+  bodyLight: {r: 1, g: 0.86, b: 0.72, a: 1}
+  accent: {r: 0.19999999, g: 0.616, b: 1, a: 1}
+  idleClip: Idle
+  walkClip: Walk
+  runClip: Run
+  aggroIdleClip: Idle
+  jumpRiseClip: JumpRise
+  jumpMidClip: JumpMid
+  jumpFallClip: JumpFall
+  hurtClip: HitDamage
+  dieClip: Die
+  telegraphClip: PunchA
+  attackClip: PunchA
+  recoverClip: Idle

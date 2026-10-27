@@ -122,3 +122,7 @@ InitTestScene*.unity*
 /Assets/Plugins/vInspector.meta
 /Assets/Plugins/vFolders/
 /Assets/Plugins/vFolders.meta
+
+# Generated enemy art: recoloured copies derived from the licensed DeadRevolver pack - regenerate with Hollowknight > Generate Enemy Variants
+/Assets/EnemyArt/
+/Assets/EnemyArt.meta

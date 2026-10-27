@@ -63,20 +63,25 @@ MonoBehaviour:
   attackDuration: 0.3
   attackCooldown: 0.36
   slashActiveTime: 0.14
+  forwardSlashStartTime: 0.0625
+  comboSlashStartTime: 0.083
+  airSlashStartTime: 0.071
+  upSlashStartTime: 0.143
+  downSlashStartTime: 0.071
   attackBufferSteps: 6
   comboResetTime: 0.4
-  forwardSlashSize: {x: 1.6, y: 1.2}
-  forwardSlashOffset: {x: 1.2, y: 0.15}
-  upSlashSize: {x: 1.4, y: 1.5}
+  forwardSlashSize: {x: 1.1, y: 1.2}
+  forwardSlashOffset: {x: 0.8, y: 0.15}
+  upSlashSize: {x: 1.4, y: 0.8}
   upSlashOffset: {x: 0, y: 1.15}
-  downSlashSize: {x: 1.4, y: 1.4}
-  downSlashOffset: {x: 0, y: -1.1}
+  downSlashSize: {x: 1.4, y: 0.5}
+  downSlashOffset: {x: 0, y: 0}
   recoilSteps: 5
   recoilSpeed: 8
   bounceStartSteps: 3
   wallSlashMaxFall: 5
   upSlashWallPush: 0.8
-  maxHealth: 5
+  maxHealth: 100
   invulnerableTime: 1.3
   damageRecoilVelocity: {x: 9, y: 5}
   damageRecoilTime: 0.2
@@ -85,7 +90,8 @@ MonoBehaviour:
   respawnHoldTime: 0.25
   flickerInterval: 0.08
   flickerDimAlpha: 0.3
-  heroDamageFreeze: 0
+  heroHitFlashTime: 0.12
+  heroDamageFreeze: -1
   heroDamageShake: 3
   heroDeathShake: 5
   nailHitFreeze: 6
@@ -120,6 +126,7 @@ MonoBehaviour:
   mantleStepForward: 0.7
   mantleJumpCancelStep: 2
   mantleCooldownSteps: 10
+  nailDamage: 1
   groundMask:
     serializedVersion: 2
     m_Bits: 4294967295

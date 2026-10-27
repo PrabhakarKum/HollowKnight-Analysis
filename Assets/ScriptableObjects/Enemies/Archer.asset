@@ -1,0 +1,72 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d8e277cc5f81d6d4f9c59fc11ee8f04a, type: 3}
+  m_Name: Archer
+  m_EditorClassIdentifier: 
+  kind: 1
+  maxHealth: 3
+  hitKnockback: {x: 4.5, y: 3}
+  hurtTime: 0.3
+  walkSpeed: 2
+  chaseSpeed: 3.5
+  acceleration: 40
+  gravityScale: 4
+  sightRange: 9
+  sightHeight: 3.8
+  loseSightTime: 2.5
+  patrolRange: 1.5
+  patrolPause: 1.4
+  canDropLedges: 0
+  rangedMin: 5
+  rangedMax: 10
+  damage: 1
+  telegraphTime: 0.8
+  activeTime: 0.25
+  recoverTime: 0.9
+  cooldown: 0.5
+  moves: []
+  shot:
+    windupClip: BowDraw
+    windupClipLength: 0.4375
+    windupTo: 0.43
+    windupLean: 0
+    clip: BowFire
+    clipLength: 0.2083
+    releaseTime: 0.0417
+    leadIn: 0.0417
+    speed: 1
+  projectileSpeed: 15
+  projectileGravity: 14
+  burstCount: 1
+  burstGap: 0.14
+  muzzleOffset: {x: 0.9, y: 0.35}
+  boomerangDistance: 0
+  canJump: 1
+  jumpCooldown: 0.9
+  maxJumpHeight: 3
+  jumpForwardSpeed: 4
+  contactDamage: 0
+  bodyMid: {r: 0.55, g: 0.3, b: 0.78, a: 1}
+  bodyLight: {r: 0.93, g: 0.84, b: 0.99, a: 1}
+  accent: {r: 1, g: 0.824, b: 0.19999999, a: 1}
+  idleClip: Idle
+  walkClip: Walk
+  runClip: Run
+  aggroIdleClip: BowAim
+  jumpRiseClip: JumpRise
+  jumpMidClip: JumpMid
+  jumpFallClip: JumpFall
+  hurtClip: HitDamage
+  dieClip: Die
+  telegraphClip: BowDraw
+  attackClip: BowFire
+  recoverClip: BowAim

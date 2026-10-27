@@ -1,0 +1,72 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d8e277cc5f81d6d4f9c59fc11ee8f04a, type: 3}
+  m_Name: BladeThrower
+  m_EditorClassIdentifier: 
+  kind: 3
+  maxHealth: 3
+  hitKnockback: {x: 4.5, y: 3}
+  hurtTime: 0.3
+  walkSpeed: 2.2
+  chaseSpeed: 3.5
+  acceleration: 40
+  gravityScale: 4
+  sightRange: 7
+  sightHeight: 3.5
+  loseSightTime: 2.5
+  patrolRange: 2.5
+  patrolPause: 1
+  canDropLedges: 0
+  rangedMin: 4
+  rangedMax: 8
+  damage: 1
+  telegraphTime: 0.4
+  activeTime: 0.3
+  recoverTime: 1
+  cooldown: 0.4
+  moves: []
+  shot:
+    windupClip: ThrowOverarm
+    windupClipLength: 0.357
+    windupTo: 0.135
+    windupLean: 0
+    clip: ThrowOverarm
+    clipLength: 0.357
+    releaseTime: 0.143
+    leadIn: 0
+    speed: 1
+  projectileSpeed: 11
+  projectileGravity: 0
+  burstCount: 1
+  burstGap: 0.14
+  muzzleOffset: {x: 0.7, y: 0.3}
+  boomerangDistance: 7
+  canJump: 1
+  jumpCooldown: 0.9
+  maxJumpHeight: 3
+  jumpForwardSpeed: 4.5
+  contactDamage: 0
+  bodyMid: {r: 0.2, g: 0.42, b: 0.78, a: 1}
+  bodyLight: {r: 0.82, g: 0.9, b: 1, a: 1}
+  accent: {r: 1, g: 0.19999999, b: 0.44000015, a: 1}
+  idleClip: Idle
+  walkClip: Walk
+  runClip: Run
+  aggroIdleClip: Idle
+  jumpRiseClip: JumpRise
+  jumpMidClip: JumpMid
+  jumpFallClip: JumpFall
+  hurtClip: HitDamage
+  dieClip: Die
+  telegraphClip: ThrowOverarm
+  attackClip: ThrowOverarm
+  recoverClip: Idle

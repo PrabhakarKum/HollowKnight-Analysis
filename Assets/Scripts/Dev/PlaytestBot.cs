@@ -76,6 +76,9 @@ namespace Hollowknight.Dev
 
         IEnumerator Start()
         {
+            // keep the game loop ticking when the editor window is not in front (the editor otherwise stalls the play loop - a run
+            // would then hang, or lose half its test time; this is a runtime flag and is not saved into the project settings)
+            Application.runInBackground = true;
             InputSystem.settings.backgroundBehavior = InputSettings.BackgroundBehavior.IgnoreFocus;
             InputSystem.settings.editorInputBehaviorInPlayMode = InputSettings.EditorInputBehaviorInPlayMode.AllDeviceInputAlwaysGoesToGameView;
             kb = Keyboard.current;
@@ -87,8 +90,34 @@ namespace Hollowknight.Dev
             Log("start pos " + rb.position + " fixedDt " + Time.fixedDeltaTime);
             // The mantle pulls the hero up onto the scene's platforms and wall tops, which would change what the older wall / ledge scenarios
             // measure. It is switched off for every group except the mantle ones, and restored in Finish().
+            // The tests change tuning values. They work on a COPY of the tuning asset (swapped into the player for this run only), so the
+            // owner's hand-tuned values in the asset can never be left changed - not even if a run is stopped half way.
+            var tuningFieldStart = typeof(PlayerController2D).GetField("tuning", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            tuningFieldStart.SetValue(p, Instantiate((PlayerTuning)tuningFieldStart.GetValue(p)));
+            // the damage tests check the hit-stop itself, so it is switched on in the copy whatever the owner's setting is (the "no hit-stop" case has its own test)
+            p.Tuning.heroDamageFreeze = Hollowknight.Feel.FreezeType.HeroDamage;
+            // the damage tests assume the default 5 masks; the owner may play-test with more (100 at the moment), so the copy is pinned
+            p.Tuning.maxHealth = 5;
+            var heroHealthStart = p.GetComponent<PlayerHealth2D>();
+            if (heroHealthStart != null) heroHealthStart.DebugSetHealth(5);
+            // what-if experiments on the copy only: EditorPrefs HK_DOWNBOX = "sizeX,sizeY,offsetX,offsetY" replaces the down-slash box for one run
+            string downBox = EditorPrefs.GetString("HK_DOWNBOX");
+            if (!string.IsNullOrEmpty(downBox))
+            {
+                EditorPrefs.SetString("HK_DOWNBOX", "");
+                var v = downBox.Split(',');
+                var inv = System.Globalization.CultureInfo.InvariantCulture;
+                p.Tuning.downSlashSize = new Vector2(float.Parse(v[0], inv), float.Parse(v[1], inv));
+                p.Tuning.downSlashOffset = new Vector2(float.Parse(v[2], inv), float.Parse(v[3], inv));
+                Log("down-slash box overridden for this run: size " + p.Tuning.downSlashSize + " offset " + p.Tuning.downSlashOffset);
+            }
             mantleSaved = p.Tuning.mantleEnabled;
             p.Tuning.mantleEnabled = false;
+            // the hand-test enemies must be off from the very first frame (they would otherwise start hunting the hero, and a thrown blade is a
+            // separate object that keeps flying after its thrower is switched off)
+            var arenaNow = GameObject.Find("Enemy Test Arena");
+            if (arenaNow != null) arenaNow.SetActive(false);
+            foreach (var pr in FindObjectsByType<Hollowknight.Enemies.EnemyProjectile2D>(FindObjectsSortMode.None)) Destroy(pr.gameObject);
 
             if (EditorPrefs.GetString("HK_MODE") == "hunt")
             {
@@ -153,6 +182,56 @@ namespace Hollowknight.Dev
                 }
                 var demoDamage = GameObject.Find("Damage Test Objects");     // the hand-test enemy / spikes would disturb the scripted tests
                 if (demoDamage != null) demoDamage.SetActive(false);
+                var arena = GameObject.Find("Enemy Test Arena");             // the hand-test enemies would hunt the hero during every scripted test
+                if (arena != null) arena.SetActive(false);
+                if (EditorPrefs.GetString("HK_ONLY") == "enemyshots")
+                {
+                    EditorPrefs.SetString("HK_ONLY", "");
+                    yield return EnemyShots();
+                    Log("DONE");
+                    Finish();
+                    yield break;
+                }
+                if (EditorPrefs.GetString("HK_ONLY") == "brawlershots")
+                {
+                    EditorPrefs.SetString("HK_ONLY", "");
+                    yield return BrawlerShots();
+                    Log("DONE");
+                    Finish();
+                    yield break;
+                }
+                if (EditorPrefs.GetString("HK_ONLY") == "rangedshots")
+                {
+                    EditorPrefs.SetString("HK_ONLY", "");
+                    yield return RangedShots();
+                    Log("DONE");
+                    Finish();
+                    yield break;
+                }
+                if (EditorPrefs.GetString("HK_ONLY") == "nailshots")
+                {
+                    EditorPrefs.SetString("HK_ONLY", "");
+                    yield return NailShots();
+                    Log("DONE");
+                    Finish();
+                    yield break;
+                }
+                if (EditorPrefs.GetString("HK_ONLY") == "nail")
+                {
+                    EditorPrefs.SetString("HK_ONLY", "");
+                    yield return NailTests();
+                    Log("DONE");
+                    Finish();
+                    yield break;
+                }
+                if (EditorPrefs.GetString("HK_ONLY") == "enemy")
+                {
+                    EditorPrefs.SetString("HK_ONLY", "");
+                    yield return EnemyTests();
+                    Log("DONE");
+                    Finish();
+                    yield break;
+                }
                 if (EditorPrefs.GetString("HK_ONLY") == "sprint")
                 {
                     EditorPrefs.SetString("HK_ONLY", "");
@@ -868,10 +947,12 @@ namespace Hollowknight.Dev
                 Keys(Key.Space); yield return null; Keys(); yield return new WaitForSeconds(0.1f);        // air jump
                 Keys(Key.LeftShift); yield return null; Keys(); yield return new WaitForSeconds(0.4f);    // air dash, wait until it has ended
                 int jumpsBefore = p.AirJumpsLeft, dashesBefore = p.AirDashesLeft;
-                Tp(2f, 6.5f); yield return new WaitForFixedUpdate();
+                // (the down swing's hit now counts on its animation keyframe, ~0.15-0.2 s after the press, and the hero keeps falling meanwhile -
+                // so the press has to come from higher up than when the hit was instant)
+                Tp(2f, 9.5f); yield return new WaitForFixedUpdate();
                 Keys(Key.S);
                 float fell = 0;
-                while (rb.position.y > 3.7f && fell < 3f) { fell += Time.deltaTime; yield return null; }
+                while (rb.position.y > 6.0f && fell < 3f) { fell += Time.deltaTime; yield return null; }
                 Keys(Key.S, Key.J); yield return null; Keys(Key.S);
                 bool sawBounce = false; float vyAtBounce = -99f; float yAtBounce = rb.position.y;
                 for (int i = 0; i < 14; i++) { yield return new WaitForFixedUpdate(); if (p.IsBouncing) { sawBounce = true; vyAtBounce = Mathf.Max(vyAtBounce, rb.linearVelocity.y); } }
@@ -918,10 +999,12 @@ namespace Hollowknight.Dev
         IEnumerator RecentTests()
         {
             yield return DamageTests();
+            yield return NailTests();                             // the nail's hit lands on the animation keyframe; no hit-stop when the hero is hurt (shipped setting)
             yield return FeelTests();                             // hit-stop + screen shake
             yield return SilkTests();                             // silk + bind
             yield return SprintTests();                           // sprint + sprint jump
             yield return MantleTests();                           // ledge mantle
+            yield return EnemyTests();                            // enemies: health, damage, death, ranged / melee behaviour
         }
 
         /// <summary>The old scenarios (S1-S46 ...): run, jump, double jump, dash, wall slide / jump, combat, float, hard landing, camera. Opt-in: HK_ONLY = "legacy".</summary>
@@ -2007,6 +2090,444 @@ namespace Hollowknight.Dev
             }
         }
 
+        // ====================================================================== enemies
+
+        readonly System.Collections.Generic.List<GameObject> enemies = new System.Collections.Generic.List<GameObject>();
+
+        GameObject SpawnEnemy(Hollowknight.Enemies.EnemyKind kind, float x, float feetY = -0.5f, bool ai = true)
+        {
+            var go = Hollowknight.Enemies.EnemyBuilder.BuildEnemy(kind, new Vector2(x, feetY));
+            if (!ai) go.GetComponent<Hollowknight.Enemies.EnemyBrain2D>().enabled = false;
+            enemies.Add(go);
+            return go;
+        }
+
+        /// <summary>Where the enemy's swing animation currently is, in clip seconds.</summary>
+        static float ClipTimeOf(Animator a, Hollowknight.Enemies.MeleeMove m) => a.GetCurrentAnimatorStateInfo(0).normalizedTime * m.clipLength;
+
+        void ClearEnemies()
+        {
+            foreach (var e in enemies) if (e != null) Destroy(e);
+            enemies.Clear();
+            foreach (var pr in FindObjectsByType<Hollowknight.Enemies.EnemyProjectile2D>(FindObjectsSortMode.None)) Destroy(pr.gameObject);
+        }
+
+        /// <summary>One nail swing at an enemy on the ground to the hero's left: the hero is put 1.3 in front of it, facing it.</summary>
+        IEnumerator SwingAt(GameObject enemy, PlayerCombat2D combat)
+        {
+            var motor = enemy.GetComponent<Hollowknight.Enemies.EnemyMotor2D>();
+            for (float t = 0; t < 1.5f && (!motor.IsGrounded || motor.IsKnocked); t += Time.unscaledDeltaTime) yield return null;
+            Keys(); Tp(enemy.transform.position.x + 1.3f, 0.23f);
+            yield return null;
+            Keys(Key.A); yield return new WaitForSeconds(0.06f); Keys();
+            yield return DoSwing(combat, (d, c) => { });
+            yield return new WaitForSeconds(0.2f);
+        }
+
+        IEnumerator EnemyTests()
+        {
+            var health = p.GetComponent<PlayerHealth2D>();
+            var silk = p.GetComponent<PlayerSilk2D>();
+            var combat = p.GetComponent<PlayerCombat2D>();
+            var layer = Hollowknight.Feel.PixelFxLayer.Instance;
+            var tun = p.Tuning;
+            var hiddenP = new System.Collections.Generic.List<GameObject>();
+            foreach (var n in new[] { "Platform High", "Platform Low" }) { var g = GameObject.Find(n); if (g != null) { g.SetActive(false); hiddenP.Add(g); } }
+            if (health != null) yield return ResetDamageState(health);
+            silk.DebugSetSilk(0);
+            var K = Hollowknight.Enemies.EnemyKind.Archer;
+
+            // ---- S130-S132: a nail hit takes health, gives silk, knocks the enemy back and staggers it
+            var e1 = SpawnEnemy(Hollowknight.Enemies.EnemyKind.Brawler, -9f, ai: false);
+            var eh1 = e1.GetComponent<Hollowknight.Enemies.EnemyHealth2D>(); var eb1 = e1.GetComponent<Hollowknight.Enemies.EnemyBrain2D>();
+            yield return new WaitForSeconds(0.5f);
+            int hp0 = eh1.Health; float x0 = e1.transform.position.x; int silk0 = silk.Silk;
+            yield return SwingAt(e1, combat);
+            Verdict("S130 a nail hit takes " + tun.nailDamage + " health (" + hp0 + " -> " + eh1.Health + ") and gives the hero " + (silk.Silk - silk0) + " silk",
+                eh1.Health == hp0 - tun.nailDamage && silk.Silk == silk0 + tun.silkPerHit, "");
+            yield return new WaitForSeconds(0.3f);
+            Verdict("S131 the hit knocks the enemy away from the hero (x " + x0.ToString("F2") + " -> " + e1.transform.position.x.ToString("F2") + ") and staggers it (state " + eb1.State + ")",
+                e1.transform.position.x < x0 - 0.5f && eb1.State == Hollowknight.Enemies.EnemyState.Hurt, "");
+            ClearEnemies();
+
+            // ---- S132-S135: killing an enemy
+            var e2 = SpawnEnemy(K, -9f, ai: false);
+            var eh2 = e2.GetComponent<Hollowknight.Enemies.EnemyHealth2D>();
+            int died = 0; eh2.Died += () => died++;
+            yield return new WaitForSeconds(0.5f);
+            silk.DebugSetSilk(0);
+            int freeze0 = Hollowknight.Feel.FreezeMoment.StartedCount, fx0 = layer.TotalEmitted;
+            var hpSeq = new System.Collections.Generic.List<int>();
+            for (int i = 0; i < eh2.MaxHealth + 2 && !eh2.IsDead; i++)
+            {
+                yield return SwingAt(e2, combat);
+                hpSeq.Add(eh2.Health);
+                if (Time.timeScale < 0.5f) yield return new WaitForSecondsRealtime(0.4f);
+            }
+            bool deadNow = eh2.IsDead;
+            int silkAtDeath = silk.Silk;
+            Verdict("S132 an archer (3 hp) dies after 3 hits (health " + string.Join(" > ", hpSeq) + "), Died fired " + died + "x, silk " + silkAtDeath + " (one per hit)",
+                deadNow && died == 1 && silkAtDeath == eh2.MaxHealth * tun.silkPerHit, "");
+            Verdict("S133 death freezes the game (freezes started " + (Hollowknight.Feel.FreezeMoment.StartedCount - freeze0) + ") and bursts into " + (layer.TotalEmitted - fx0) + " pixels",
+                Hollowknight.Feel.FreezeMoment.StartedCount > freeze0 && layer.TotalEmitted - fx0 >= 30, "");
+            yield return new WaitForSeconds(0.2f);
+            // a corpse cannot be slashed again
+            Keys(); Tp(e2.transform.position.x + 1.3f, 0.23f); yield return null;
+            Keys(Key.A); yield return new WaitForSeconds(0.06f); Keys();
+            int silkBefore = silk.Silk;
+            yield return DoSwing(combat, (d, c) => { });
+            yield return new WaitForSeconds(0.2f);
+            Verdict("S134 a dead enemy is no longer a target (silk " + silkBefore + " -> " + silk.Silk + ", damage taken " + eh2.DamageTaken + ")", silk.Silk == silkBefore && eh2.DamageTaken == eh2.MaxHealth, "");
+            for (float t = 0; t < 3f && e2 != null; t += Time.deltaTime) yield return null;
+            Verdict("S135 the body is removed after its death animation (still there: " + (e2 != null) + ")", e2 == null, "");
+            ClearEnemies();
+
+            // ---- S136: touching a brawler hurts the hero
+            if (health != null)
+            {
+                yield return ResetDamageState(health);
+                var e3 = SpawnEnemy(Hollowknight.Enemies.EnemyKind.Brawler, -9f, ai: false);
+                yield return new WaitForSeconds(0.4f);
+                int hits0 = health.HitsTaken; bool landed = false;
+                Tp(-9f, 0.23f);
+                yield return WaitForHit(health, hits0, 1f, ok => landed = ok);
+                Verdict("S136 touching a brawler's body costs 1 health (hit " + landed + ", health " + health.Health + ")", landed && health.Health == health.MaxHealth - 1, "");
+                Keys(); ClearEnemies(); yield return ResetDamageState(health);
+            }
+
+            // ---- S137: the hero walks through enemies (they are hit with the nail, not bumped into)
+            {
+                var e4 = SpawnEnemy(Hollowknight.Enemies.EnemyKind.Gunner, -9f, ai: false);
+                yield return new WaitForSeconds(0.4f);
+                Tp(-11f, 0.23f); yield return new WaitForSeconds(0.1f);
+                Keys(Key.D); yield return new WaitForSeconds(0.7f); Keys();
+                if (health != null) health.GodMode = true;
+                Verdict("S137 the hero runs straight through an enemy (x -11 -> " + rb.position.x.ToString("F2") + "; the enemy is at " + e4.transform.position.x.ToString("F2") + ")", rb.position.x > e4.transform.position.x + 0.8f, "");
+                if (health != null) health.GodMode = false;
+                ClearEnemies();
+                if (health != null) yield return ResetDamageState(health);
+            }
+
+            // ---- S138-S141: a gunner shoots a burst
+            if (health != null)
+            {
+                yield return Place(-2f, 0.23f, 0.3f);                                    // the hero is in place first, so the counters below start before any shot
+                var e5 = SpawnEnemy(Hollowknight.Enemies.EnemyKind.Gunner, -8f);
+                var b5 = e5.GetComponent<Hollowknight.Enemies.EnemyBrain2D>();
+                var states = new System.Collections.Generic.List<string>();
+                b5.StateChanged += s => states.Add(s.ToString());
+                int fired0 = Hollowknight.Enemies.EnemyProjectile2D.SpawnedCount, flips0 = Hollowknight.Enemies.SpriteFlipbook2D.PlayedCount, hits0 = health.HitsTaken;
+                float tt = 0; while (tt < 5f && b5.ShotsFired < 3) { yield return null; tt += Time.deltaTime; }
+                yield return new WaitForSeconds(0.8f);
+                int bullets = Hollowknight.Enemies.EnemyProjectile2D.SpawnedCount - fired0;
+                Verdict("S138 a gunner notices the hero, winds up (a '!' tell), fires a burst of " + b5.ShotsFired + " shots (" + bullets + " bullets spawned) and recovers (states " + string.Join(">", states) + ")",
+                    b5.Aggro && states.Contains("Telegraph") && states.Contains("Attack") && b5.ShotsFired >= 3 && bullets >= 3, "aggro=" + b5.Aggro + " shots=" + b5.ShotsFired + " bullets=" + bullets);
+                Verdict("S139 the bullets hurt the hero once (invulnerability covers the rest): health " + health.Health + "/" + health.MaxHealth + ", hits " + (health.HitsTaken - hits0),
+                    health.HitsTaken - hits0 == 1 && health.Health == health.MaxHealth - 1, "");
+                Verdict("S140 muzzle flashes and impacts play (" + (Hollowknight.Enemies.SpriteFlipbook2D.PlayedCount - flips0) + " flipbook effects for " + bullets + " bullets)", Hollowknight.Enemies.SpriteFlipbook2D.PlayedCount - flips0 >= bullets, "");
+                ClearEnemies(); yield return ResetDamageState(health);
+            }
+
+            // ---- S141: an enemy with a wall between it and the hero does not notice or shoot
+            if (health != null)
+            {
+                SpawnBlock(new Vector2(-5f, 2f), new Vector2(1f, 5f));
+                var e6 = SpawnEnemy(Hollowknight.Enemies.EnemyKind.Gunner, -8f);
+                var b6 = e6.GetComponent<Hollowknight.Enemies.EnemyBrain2D>();
+                yield return Place(-2f, 0.23f, 0.3f);
+                yield return new WaitForSeconds(2f);
+                Verdict("S141 a gunner behind a wall does not see the hero (aggro " + b6.Aggro + ", shots " + b6.ShotsFired + ")", !b6.Aggro && b6.ShotsFired == 0, "");
+                ClearEnemies(); ClearBlocks();
+            }
+
+            // ---- S142: a bullet is stopped by the world
+            {
+                SpawnBlock(new Vector2(-5f, 2f), new Vector2(1f, 5f));
+                var e7 = SpawnEnemy(Hollowknight.Enemies.EnemyKind.Gunner, -12f, ai: false);
+                var cfg7 = e7.GetComponent<Hollowknight.Enemies.EnemyBrain2D>().Config;
+                var art7 = e7.GetComponent<Hollowknight.Enemies.EnemyArtSet>();
+                var bullet = Hollowknight.Enemies.EnemyProjectile2D.Spawn(Hollowknight.Enemies.EnemyProjectile2D.Mode.Straight, new Vector2(-8f, 0.5f), new Vector2(cfg7.projectileSpeed, 0f), cfg7, art7, e7.transform, true);
+                int flipsBefore = Hollowknight.Enemies.SpriteFlipbook2D.PlayedCount;
+                yield return new WaitForSeconds(0.6f);
+                Verdict("S142 a bullet flying into a wall is used up with an impact effect (gone " + (bullet == null) + ", impact effects " + (Hollowknight.Enemies.SpriteFlipbook2D.PlayedCount - flipsBefore) + ")",
+                    bullet == null && Hollowknight.Enemies.SpriteFlipbook2D.PlayedCount > flipsBefore, "");
+                ClearEnemies(); ClearBlocks();
+            }
+
+            // ---- S143-S144: an archer on a platform lobs an arrow in an arc
+            if (health != null)
+            {
+                SpawnBlock(new Vector2(-9f, 1.25f), new Vector2(2f, 3.5f));            // top at y 3.0
+                var e8 = SpawnEnemy(Hollowknight.Enemies.EnemyKind.Archer, -9f, 3.0f);
+                var b8 = e8.GetComponent<Hollowknight.Enemies.EnemyBrain2D>();
+                yield return new WaitForSeconds(0.5f);
+                yield return Place(-1.5f, 0.23f, 0.3f);
+                Hollowknight.Enemies.EnemyProjectile2D arrow = null; float vy0 = 0f, vyLater = 0f; Hollowknight.Enemies.EnemyProjectile2D.Mode mode = default;
+                int hits0 = health.HitsTaken;
+                for (float t = 0; t < 6f && health.HitsTaken == hits0; t += Time.deltaTime)
+                {
+                    yield return null;
+                    if (arrow == null) { arrow = FindFirstObjectByType<Hollowknight.Enemies.EnemyProjectile2D>(); if (arrow != null) { vy0 = arrow.Velocity.y; mode = arrow.Kind; } }
+                    else if (arrow != null) vyLater = arrow.Velocity.y;
+                }
+                Verdict("S143 an archer on a ledge shoots an arrow (" + mode + ") that arcs (vertical speed " + vy0.ToString("F1") + " -> " + vyLater.ToString("F1") + ") and hits the hero (hits " + (health.HitsTaken - hits0) + ", stayed on its platform: " + (b8.transform.position.y > 3.0f) + ")",
+                    mode == Hollowknight.Enemies.EnemyProjectile2D.Mode.Ballistic && vyLater < vy0 - 0.5f && health.HitsTaken - hits0 == 1 && b8.transform.position.y > 3.0f, "");
+                ClearEnemies(); ClearBlocks(); yield return ResetDamageState(health);
+            }
+
+            // ---- S145: a blade thrower's blade flies out and comes back
+            if (health != null)
+            {
+                var e9 = SpawnEnemy(Hollowknight.Enemies.EnemyKind.BladeThrower, -9f);
+                var b9 = e9.GetComponent<Hollowknight.Enemies.EnemyBrain2D>();
+                yield return new WaitForSeconds(0.5f);
+                yield return Place(-3.5f, 0.23f, 0.3f);
+                Hollowknight.Enemies.EnemyProjectile2D blade = null; float maxDist = 0f; bool sawReturn = false, gone = false; int hits0 = health.HitsTaken;
+                for (float t = 0; t < 8f; t += Time.deltaTime)
+                {
+                    yield return null;
+                    if (blade == null && !gone) { blade = FindFirstObjectByType<Hollowknight.Enemies.EnemyProjectile2D>(); }
+                    if (blade != null)
+                    {
+                        maxDist = Mathf.Max(maxDist, Mathf.Abs(blade.transform.position.x - e9.transform.position.x));
+                        sawReturn |= blade.Returning;
+                    }
+                    else if (maxDist > 0f) { gone = true; break; }
+                    if (blade == null && maxDist > 0f) { gone = true; break; }
+                }
+                Verdict("S145 a thrown blade flies out (" + maxDist.ToString("F1") + " u from the thrower, throw distance " + b9.Config.boomerangDistance + "), turns back (" + sawReturn + "), is gone once home (" + gone + ") and hurt the hero " + (health.HitsTaken - hits0) + "x",
+                    maxDist > 4f && sawReturn && gone && health.HitsTaken - hits0 >= 1, "");
+                ClearEnemies(); yield return ResetDamageState(health);
+            }
+
+            // ---- S146-S148: a brawler chases, jumps onto a platform after the hero, and strikes
+            if (health != null)
+            {
+                SpawnBlock(new Vector2(-4f, 0.75f), new Vector2(3f, 2.5f));            // x -5.5..-2.5, top at y 2.0
+                var e10 = SpawnEnemy(Hollowknight.Enemies.EnemyKind.Brawler, -10f);
+                var b10 = e10.GetComponent<Hollowknight.Enemies.EnemyBrain2D>();
+                var m10 = e10.GetComponent<Hollowknight.Enemies.EnemyMotor2D>();
+                var v10 = e10.GetComponent<Hollowknight.Enemies.EnemyVisuals2D>();
+                var states = new System.Collections.Generic.List<string>(); b10.StateChanged += s => states.Add(s.ToString());
+                yield return new WaitForSeconds(0.4f);
+                health.GodMode = true;                                                   // we are measuring the enemy, not the hurting
+                Tp(-3.5f, 2.72f); rb.linearVelocity = Vector2.zero;                       // the hero stands on top of the block
+                float peakSpeed = 0f; bool onTop = false; string clipWhileChasing = ""; float tStart = Time.time;
+                for (float t = 0; t < 5f && !onTop; t += Time.deltaTime)
+                {
+                    yield return null;
+                    if (Mathf.Abs(m10.Velocity.x) > peakSpeed) { peakSpeed = Mathf.Abs(m10.Velocity.x); clipWhileChasing = v10.CurrentClip; }
+                    onTop = m10.FeetY > 1.9f && m10.IsGrounded;
+                }
+                Verdict("S146 a brawler notices the hero standing on a 2.5-high block, chases it (peak speed " + peakSpeed.ToString("F1") + ", chase speed " + b10.Config.chaseSpeed + "), jumps up (" + b10.JumpsMade + " jumps) and stands on top at y " + m10.FeetY.ToString("F2") + " after " + (Time.time - tStart).ToString("F1") + " s",
+                    onTop && b10.JumpsMade >= 1 && peakSpeed > b10.Config.chaseSpeed - 1f, "");
+                Verdict("S147 the run animation plays while it chases (clip '" + clipWhileChasing + "')", clipWhileChasing == b10.Config.runClip, "");
+                for (float t = 0; t < 3f && !states.Contains("Attack"); t += Time.deltaTime) yield return null;
+                Verdict("S148 once close it winds up and strikes (states " + string.Join(">", states.GetRange(0, Mathf.Min(12, states.Count))) + ")", states.Contains("Telegraph") && states.Contains("Attack"), "");
+                health.GodMode = false; ClearEnemies(); ClearBlocks(); yield return ResetDamageState(health);
+            }
+
+            // ---- S149: a patrolling enemy stays on its platform instead of walking off the edge
+            {
+                SpawnBlock(new Vector2(-9f, 0.75f), new Vector2(3f, 2.5f));            // x -10.5..-7.5, top at y 2.0
+                var e11 = SpawnEnemy(Hollowknight.Enemies.EnemyKind.Gunner, -9f, 2.0f);
+                yield return new WaitForSeconds(0.3f);
+                Tp(10f, 0.23f);                                                          // far away: it never notices the hero
+                float lowest = 99f;
+                for (float t = 0; t < 7f; t += Time.deltaTime) { yield return null; lowest = Mathf.Min(lowest, e11.transform.position.y - 0.7f); }
+                Verdict("S149 a patrolling gunner turns at the platform edge and never falls off (lowest feet y " + lowest.ToString("F2") + ", platform top 2.0)", lowest > 1.9f, "");
+                ClearEnemies(); ClearBlocks();
+            }
+
+            // ---- S150: a hit interrupts a wind-up
+            if (health != null)
+            {
+                var e12 = SpawnEnemy(Hollowknight.Enemies.EnemyKind.Brawler, -9f);
+                var b12 = e12.GetComponent<Hollowknight.Enemies.EnemyBrain2D>();
+                yield return new WaitForSeconds(0.4f);
+                Tp(e12.transform.position.x + 1.0f, 0.23f); p.FaceToward(-1);                                 // 1.0 in front of it wherever its patrol has taken it: it winds up at once, and the nail reaches it for sure (turned without walking)
+                for (float t = 0; t < 2f && b12.State != Hollowknight.Enemies.EnemyState.Telegraph; t += Time.deltaTime) yield return null;
+                bool wasWinding = b12.State == Hollowknight.Enemies.EnemyState.Telegraph;
+                int hp12 = e12.GetComponent<Hollowknight.Enemies.EnemyHealth2D>().Health;
+                int hitsBefore = health.HitsTaken, swings0 = combat.SwingsStarted;
+                Vector2 heroPos12 = rb.position, enemyPos12 = e12.transform.position; int facing12 = p.FacingDirection; float attacksBefore = b12.AttacksStarted;
+                Keys(Key.J); yield return null; Keys();
+                yield return new WaitForSeconds(0.25f);
+                bool staggered = b12.State == Hollowknight.Enemies.EnemyState.Hurt;
+                int hp12b = e12.GetComponent<Hollowknight.Enemies.EnemyHealth2D>().Health;
+                Verdict("S150 hitting an enemy during its wind-up cancels the attack (was winding up " + wasWinding + ", now " + b12.State + ", health " + hp12 + " -> " + hp12b + "), the hero was not hit (" + (health.HitsTaken - hitsBefore) + ")",
+                    wasWinding && hp12b < hp12 && staggered && health.HitsTaken == hitsBefore,
+                    "swings " + (combat.SwingsStarted - swings0) + " hero " + heroPos12 + " facing " + facing12 + " enemy " + enemyPos12 + " attacksStarted " + attacksBefore + "->" + b12.AttacksStarted + " heroNow " + rb.position + " enemyNow " + e12.transform.position);
+                ClearEnemies(); yield return ResetDamageState(health);
+            }
+
+            // ---- S151: the death animation plays
+            {
+                var e13 = SpawnEnemy(K, -9f, ai: false);
+                var eh13 = e13.GetComponent<Hollowknight.Enemies.EnemyHealth2D>(); var v13 = e13.GetComponent<Hollowknight.Enemies.EnemyVisuals2D>();
+                yield return new WaitForSeconds(0.4f);
+                eh13.ApplyDamage(eh13.MaxHealth, new Vector2(-5f, 0f));
+                yield return new WaitForSeconds(0.3f);
+                Verdict("S151 a killed enemy plays its death animation (clip '" + v13.CurrentClip + "') and is dead (" + eh13.IsDead + ")", eh13.IsDead && v13.CurrentClip == "Die", "");
+                ClearEnemies();
+            }
+
+            // ---- S152-S158: a brawler's blow lines up with its art, and the hero shows the hit at once (a punch, then a kick)
+            if (health != null)
+            {
+                var heroAnim = p.GetComponentInChildren<Animator>();
+                var heroSr = heroAnim.GetComponent<SpriteRenderer>();
+                for (int blow = 0; blow < 2; blow++)
+                {
+                    string id = blow == 0 ? "a" : "b";
+                    yield return ResetDamageState(health);
+                    yield return Place(-3f, 0.23f, 0.3f);
+                    p.FaceToward(-1);
+                    var e14 = SpawnEnemy(Hollowknight.Enemies.EnemyKind.Brawler, -8f);
+                    var b14 = e14.GetComponent<Hollowknight.Enemies.EnemyBrain2D>();
+                    var anim14 = e14.GetComponentInChildren<Animator>();
+                    var motor14 = e14.GetComponent<Hollowknight.Enemies.EnemyMotor2D>();
+                    var melee14 = e14.transform.Find("MeleeHitbox").GetComponent<BoxCollider2D>();
+                    if (blow == 1) b14.DebugSkipMove();                                            // the second blow is the kick
+                    int hits0 = health.HitsTaken, burst0 = layer.TotalEmitted, ring0 = HeroHitFx.PlayedCount, flash0 = Hollowknight.Feel.SpriteFlash2D.FlashCount;
+
+                    float t = 0;
+                    for (; t < 8f && b14.State != Hollowknight.Enemies.EnemyState.Telegraph; t += Time.deltaTime) yield return null;
+                    var mv = b14.CurrentMove;
+                    var vis14 = e14.GetComponent<Hollowknight.Enemies.EnemyVisuals2D>();
+                    // sample every frame of the wind-up: the animation must keep moving (a held pose reads as the game stopping), the body leans back, and it brakes out of the run
+                    float lastWind = -1f, prevClip = -1f, maxLean = 0f, vStart = Mathf.Abs(motor14.Velocity.x), vLater = -1f, leanAtEnd = 0f;
+                    int stalled = 0, windFrames = 0; bool monotonic = true;
+                    for (t = 0; t < 1f && b14.State == Hollowknight.Enemies.EnemyState.Telegraph; t += Time.deltaTime)
+                    {
+                        float ct = ClipTimeOf(anim14, mv);
+                        if (prevClip >= 0f) { if (ct < prevClip - 0.0005f) monotonic = false; if (Mathf.Abs(ct - prevClip) < 0.0001f) stalled++; }
+                        prevClip = ct; lastWind = ct; windFrames++;
+                        leanAtEnd = -vis14.WindupOffset * motor14.Facing;
+                        maxLean = Mathf.Max(maxLean, leanAtEnd);
+                        if (vLater < 0f && t >= 0.06f) vLater = Mathf.Abs(motor14.Velocity.x);
+                        yield return null;
+                    }
+                    float firstSwing = ClipTimeOf(anim14, mv);
+                    float offsetAtStrike = vis14.WindupOffset, vAtStrike = Mathf.Abs(motor14.Velocity.x);
+                    float tAttack0 = Time.time;
+                    var dmg14 = melee14.GetComponent<DamageSource2D>();
+                    bool liveAtFirstFrame = dmg14.active;                                                  // the limb is seen out first (hitDelay), then it connects
+                    float farEdge = Mathf.Abs((motor14.Facing > 0 ? melee14.bounds.max.x : melee14.bounds.min.x) - e14.transform.position.x);
+                    Verdict("S152" + id + " " + mv.clip + ": the wind-up keeps moving all the way to the strike frame, no held pose (" + windFrames + " frames, clip time rises to " + lastWind.ToString("F3") + " of " + mv.strikeTime + ", never goes back: " + monotonic + ", frames with no change " + stalled + "), then the blow is at the strike frame (" + firstSwing.ToString("F3") + ")",
+                        monotonic && stalled <= windFrames / 10 && lastWind >= mv.strikeTime * 0.85f && lastWind < mv.strikeTime && firstSwing >= mv.strikeTime - 0.002f,
+                        "a held pose would show as most of the frames unchanged; allowed " + windFrames / 10);
+                    Verdict("S159" + id + " " + mv.clip + ": the body leans back " + maxLean.ToString("F2") + " (set " + mv.pullBack + ") during the wind-up and is back on its spot, at full reach, when the blow starts (offset " + offsetAtStrike.ToString("F2") + ")",
+                        maxLean >= mv.pullBack * 0.6f && Mathf.Abs(offsetAtStrike) < 0.001f, "");
+                    Verdict("S160" + id + " the brawler brakes out of its run into the wind-up instead of stopping dead (speed " + vStart.ToString("F1") + " at the start, " + vLater.ToString("F1") + " after 0.06 s, " + vAtStrike.ToString("F2") + " at the blow)",
+                        vStart > 2.5f && vLater > 0.3f && vLater < vStart && vAtStrike < 0.1f, "");
+                    for (t = 0; t < 0.6f && health.HitsTaken == hits0 && !dmg14.active; t += Time.deltaTime) yield return null;
+                    float liveAfter = Time.time - tAttack0;
+                    Verdict("S153" + id + " " + mv.clip + ": the limb is out first and the hitbox goes live " + liveAfter.ToString("F3") + " s later (hitDelay " + mv.hitDelay + ", live on the first strike frame: " + liveAtFirstFrame + "), ending " + farEdge.ToString("F2") + " from the body, just inside the limb tip at " + mv.limbReach,
+                        !liveAtFirstFrame && liveAfter >= mv.hitDelay - 0.03f && liveAfter <= mv.hitDelay + 0.05f && farEdge <= mv.limbReach + 0.001f && farEdge >= mv.limbReach - 0.2f, "");
+
+                    float gap = Mathf.Abs(rb.position.x - e14.transform.position.x);
+                    for (t = 0; t < 0.6f && health.HitsTaken == hits0; t += Time.deltaTime) { gap = Mathf.Abs(rb.position.x - e14.transform.position.x); yield return null; }   // (the last sample BEFORE the hit: the knock-back moves the hero at once)
+                    float hitAfter = Time.time - tAttack0;
+                    bool landed = health.HitsTaken == hits0 + 1;
+                    float artEdge = gap - 0.25f;                                                                   // the hero's art is at most +-0.25 wide when standing
+                    float heroX0 = rb.position.x;
+                    Verdict("S154" + id + " " + mv.clip + ": the blow lands " + hitAfter.ToString("F3") + " s after the strike frame appears (hitDelay " + mv.hitDelay + "), with the limb touching the hero's art (centre gap " + gap.ToString("F2") + ", art edge " + artEdge.ToString("F2") + " <= limb tip " + mv.limbReach + ")",
+                        landed && hitAfter >= mv.hitDelay - 0.03f && hitAfter < mv.hitDelay + 0.07f && artEdge <= mv.limbReach + 0.01f, "");
+
+                    // what is on screen the moment the freeze begins
+                    yield return null;
+                    bool frozenNow = health.IsFrozen && Time.timeScale < 0.05f;
+                    var st = heroAnim.GetCurrentAnimatorStateInfo(0);
+                    Verdict("S155" + id + " the hero shows the hurt pose at once, during the freeze (state " + p.State + ", animator '" + (st.IsName("HitDamage") ? "HitDamage" : "other") + "', sprite " + heroSr.sprite.name + ", frozen " + frozenNow + ")",
+                        frozenNow && p.State == MotionState.Damaged && st.IsName("HitDamage") && heroSr.sprite.name.StartsWith("Hit"), "");
+                    bool whiteNow = heroSr.sharedMaterial != null && heroSr.sharedMaterial.shader.name == "Hollowknight/SpriteFlash";
+                    var fxRoot = layer.transform;
+                    Vector3 SumPos() { var s = Vector3.zero; foreach (Transform c in fxRoot) if (c.gameObject.activeSelf) s += c.position; return s; }
+                    Vector3 fxPos0 = SumPos(); int live0 = layer.LiveCount;
+                    yield return new WaitForSecondsRealtime(0.06f);
+                    bool movedWhileFrozen = Time.timeScale < 0.05f && (SumPos() - fxPos0).sqrMagnitude > 0.001f;
+                    yield return new WaitForSecondsRealtime(0.14f);
+                    bool whiteEnded = heroSr.sharedMaterial == null || heroSr.sharedMaterial.shader.name != "Hollowknight/SpriteFlash";
+                    Verdict("S156" + id + " the hero flashes white at the hit (" + (Hollowknight.Feel.SpriteFlash2D.FlashCount - flash0) + " flash, white at once " + whiteNow + ") and is back to its colours " + 0.2f.ToString("F1") + " s later (" + whiteEnded + ")",
+                        Hollowknight.Feel.SpriteFlash2D.FlashCount == flash0 + 1 && whiteNow && whiteEnded, "");
+                    Verdict("S157" + id + " an impact burst plays at the hit (" + (layer.TotalEmitted - burst0) + " pixels, " + (HeroHitFx.PlayedCount - ring0) + " burst) and keeps moving while the game is frozen (moved " + movedWhileFrozen + ", live " + live0 + ")",
+                        HeroHitFx.PlayedCount == ring0 + 1 && layer.TotalEmitted - burst0 >= 30 && movedWhileFrozen, "");
+
+                    yield return new WaitForSeconds(0.6f);
+                    float gapAfter = Mathf.Abs(rb.position.x - e14.transform.position.x);
+                    Verdict("S158" + id + " the knock-back follows the freeze and pushes the hero away from the brawler (centre gap " + gap.ToString("F2") + " -> " + gapAfter.ToString("F2") + ", moved " + (rb.position.x - heroX0).ToString("F2") + ")",
+                        gapAfter > gap + 0.5f && Mathf.Sign(rb.position.x - heroX0) == Mathf.Sign(heroX0 - e14.transform.position.x), "");
+                    ClearEnemies();
+                }
+                yield return ResetDamageState(health);
+            }
+
+            // ---- S170-S172: a ranged enemy's projectile leaves on its animation's release frame, and the wind-up before it never holds still
+            if (health != null)
+            {
+                yield return RangedShotTiming(Hollowknight.Enemies.EnemyKind.Gunner, -8f, "S170", "gunner bullets (GunFire, recoil frame)");
+                yield return RangedShotTiming(Hollowknight.Enemies.EnemyKind.Archer, -9f, "S171", "archer arrow (BowFire, release flash frame)");
+                yield return RangedShotTiming(Hollowknight.Enemies.EnemyKind.BladeThrower, -8f, "S172", "blade (ThrowOverarm, the throw frame)");
+            }
+
+            foreach (var g in hiddenP) if (g != null) g.SetActive(true);
+            if (health != null) health.GodMode = false;
+            silk.DebugSetSilk(0);
+            Keys();
+        }
+
+        IEnumerator RangedShotTiming(Hollowknight.Enemies.EnemyKind kind, float enemyX, string id, string what)
+        {
+            var health = p.GetComponent<PlayerHealth2D>();
+            yield return ResetDamageState(health);
+            health.GodMode = true;                                                         // the shots may hit; only the timing is being measured
+            yield return Place(-2f, 0.23f, 0.3f); p.FaceToward(-1);
+            var e = SpawnEnemy(kind, enemyX);
+            var b = e.GetComponent<Hollowknight.Enemies.EnemyBrain2D>();
+            var v = e.GetComponent<Hollowknight.Enemies.EnemyVisuals2D>();
+            var sm = b.Config.shot;
+            if (sm == null || !sm.Timed) { Verdict(id + " " + what + ": the config has shot timing", false, "no ShotMove data in the config asset"); ClearEnemies(); health.GodMode = false; yield break; }
+
+            float t = 0;
+            for (; t < 10f && b.State != Hollowknight.Enemies.EnemyState.Telegraph; t += Time.deltaTime) yield return null;
+            // the wind-up: the animation keeps moving up to the shot (no held pose)
+            float prev = -1f, last = -1f; bool monotonic = true; int stalled = 0, frames = 0;
+            for (t = 0; t < 2f && b.State == Hollowknight.Enemies.EnemyState.Telegraph; t += Time.deltaTime)
+            {
+                float c = v.ScrubClipTime;
+                if (c >= 0f)
+                {
+                    if (prev >= 0f) { if (c < prev - 0.0005f) monotonic = false; if (Mathf.Abs(c - prev) < 0.0001f) stalled++; }
+                    prev = c; last = c;
+                }
+                frames++;
+                yield return null;
+            }
+            // the shots: when each projectile appears, which clip and which clip time is on screen
+            var shots = new System.Collections.Generic.List<(string clip, float clipTime, float at)>();
+            int seen = b.ShotsFired; float tAttack0 = Time.time;
+            for (t = 0; t < 3f && b.State == Hollowknight.Enemies.EnemyState.Attack; t += Time.deltaTime)
+            {
+                if (b.ShotsFired > seen) { seen = b.ShotsFired; shots.Add((v.CurrentClip, v.ScrubClipTime, Time.time - tAttack0)); }
+                yield return null;
+            }
+            if (b.ShotsFired > seen) shots.Add((v.CurrentClip, v.ScrubClipTime, Time.time - tAttack0));
+
+            int expected = kind == Hollowknight.Enemies.EnemyKind.Gunner ? b.Config.burstCount : 1;
+            bool allOnRelease = shots.Count == expected;
+            foreach (var s in shots) allOnRelease &= s.clip == sm.clip && s.clipTime >= sm.releaseTime - 0.002f && s.clipTime <= sm.releaseTime + 0.07f;
+            string list = string.Join(", ", shots.ConvertAll(s => s.clip + "@" + s.clipTime.ToString("F3") + " (+" + s.at.ToString("F2") + " s)"));
+            Verdict(id + " " + what + ": " + shots.Count + "/" + expected + " projectile(s) leave on the release frame (clip time " + sm.releaseTime.ToString("F3") + "): " + list + "; the first one " + (shots.Count > 0 ? shots[0].at.ToString("F2") : "-") + " s after the attack began (it used to leave at 0.00)",
+                allOnRelease && (sm.ReleaseDelay <= 0.001f || shots[0].at >= sm.ReleaseDelay - 0.03f), "");
+            if (!string.IsNullOrEmpty(sm.windupClip) && sm.windupTo > 0.01f)
+                Verdict(id + "b the wind-up keeps moving to the end of the telegraph, no held pose (" + frames + " frames, clip time rises to " + last.ToString("F3") + " of " + sm.windupTo.ToString("F3") + ", never goes back " + monotonic + ", unchanged frames " + stalled + ")",
+                    monotonic && stalled <= frames / 10 && last >= sm.windupTo * 0.85f && last <= sm.windupTo + 0.001f, "");
+            ClearEnemies();
+            health.GodMode = false;
+            yield return ResetDamageState(health);
+        }
+
         // ====================================================================== mantle (pull up onto a ledge)
 
         readonly System.Collections.Generic.List<GameObject> blocks = new System.Collections.Generic.List<GameObject>();
@@ -2374,7 +2895,7 @@ namespace Hollowknight.Dev
         // ====================================================================== silk + bind
 
         /// <summary>Visual check: renders the game camera, zoomed on the hero, to a PNG (HK_SHOTDIR).</summary>
-        void Shot(string name)
+        void Shot(string name, float cx = float.NaN, float cy = float.NaN, float size = 1.9f)
         {
             string dir = EditorPrefs.GetString("HK_SHOTDIR");
             if (string.IsNullOrEmpty(dir) || Camera.main == null) return;
@@ -2383,8 +2904,8 @@ namespace Hollowknight.Dev
             cam.CopyFrom(Camera.main);
             if (Camera.main.GetComponent<UnityEngine.Rendering.Universal.UniversalAdditionalCameraData>() != null)
                 go.AddComponent<UnityEngine.Rendering.Universal.UniversalAdditionalCameraData>();
-            cam.orthographic = true; cam.orthographicSize = 1.9f;
-            cam.transform.position = new Vector3(rb.position.x, rb.position.y + 0.7f, -10f);
+            cam.orthographic = true; cam.orthographicSize = size;
+            cam.transform.position = new Vector3(float.IsNaN(cx) ? rb.position.x : cx, float.IsNaN(cy) ? rb.position.y + 0.7f : cy, -10f);
             var rt = new RenderTexture(960, 540, 24);
             cam.targetTexture = rt;
             cam.Render();
@@ -2398,6 +2919,312 @@ namespace Hollowknight.Dev
             var silkNow = p.GetComponent<PlayerSilk2D>();
             Log("shot " + name + " binding=" + (silkNow != null && silkNow.IsBinding) + " progress=" + (silkNow != null ? silkNow.BindProgress.ToString("F2") : "-")
                 + " cancelled=" + (silkNow != null ? silkNow.BindsCancelled : -1) + " fHeld=" + (kb != null && kb.fKey.isPressed) + " state=" + p.State + " focused=" + Application.isFocused);
+        }
+
+        IEnumerator EnemyShots()
+        {
+            var health = p.GetComponent<PlayerHealth2D>();
+            foreach (var br in FindObjectsByType<Hollowknight.Enemies.EnemyBrain2D>(FindObjectsSortMode.None))
+                Log("brain '" + br.name + "' parent '" + (br.transform.parent != null ? br.transform.parent.name : "-") + "' activeInHierarchy=" + br.gameObject.activeInHierarchy + " enabled=" + br.enabled + " scene='" + br.gameObject.scene.name + "'");
+            health.GodMode = true;                                                              // frames of the enemies, not of the hero dying
+            foreach (var n in new[] { "Platform High", "Platform Low" }) { var g = GameObject.Find(n); if (g != null) g.SetActive(false); }
+            var kinds = new[] { Hollowknight.Enemies.EnemyKind.Gunner, Hollowknight.Enemies.EnemyKind.Archer, Hollowknight.Enemies.EnemyKind.BladeThrower, Hollowknight.Enemies.EnemyKind.Brawler };
+            foreach (var kind in kinds)
+            {
+                string tag = kind.ToString();
+                yield return Place(-3f, 0.23f, 0.3f);
+                p.FaceToward(-1);
+                float ex = kind == Hollowknight.Enemies.EnemyKind.Brawler ? -9.5f : -9f;
+                var e = SpawnEnemy(kind, ex);
+                var b = e.GetComponent<Hollowknight.Enemies.EnemyBrain2D>();
+                float cx = -6f, cy = 1.0f;
+                float t = 0;
+                for (; t < 6f && b.State != Hollowknight.Enemies.EnemyState.Telegraph; t += Time.deltaTime) { if (kind == Hollowknight.Enemies.EnemyKind.Brawler && b.State == Hollowknight.Enemies.EnemyState.Reposition && t > 0.5f && t < 0.6f) Shot(tag + "_0_chase", e.transform.position.x + 1.5f, cy, 2.6f); yield return null; }
+                yield return new WaitForSeconds(0.2f);
+                Shot(tag + "_1_windup", kind == Hollowknight.Enemies.EnemyKind.Brawler ? e.transform.position.x + 1.5f : cx, cy, 2.6f);
+                for (t = 0; t < 3f && b.State != Hollowknight.Enemies.EnemyState.Attack; t += Time.deltaTime) yield return null;
+                yield return new WaitForSeconds(0.12f);
+                foreach (var sr in FindObjectsByType<SpriteRenderer>(FindObjectsSortMode.None))
+                    if (sr.enabled && sr.gameObject.activeInHierarchy && sr.sprite != null && sr.sprite.name.Contains("Blade"))
+                    {
+                        Log("[" + tag + "] blade sprite '" + sr.sprite.name + "' on '" + sr.gameObject.name + "' at " + sr.transform.position);
+                        foreach (var br in FindObjectsByType<Hollowknight.Enemies.EnemyBrain2D>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+                            Log("   brain '" + br.name + "' kind=" + (br.Config != null ? br.Config.kind.ToString() : "?") + " parent='" + (br.transform.parent != null ? br.transform.parent.name : "-") + "' active=" + br.gameObject.activeInHierarchy + " pos=" + br.transform.position + " state=" + br.State + " shots=" + br.ShotsFired);
+                        foreach (var pr in FindObjectsByType<Hollowknight.Enemies.EnemyProjectile2D>(FindObjectsSortMode.None)) Log("   projectile " + pr.name + " kind=" + pr.Kind + " pos=" + pr.transform.position + " vel=" + pr.Velocity);
+                    }
+                Shot(tag + "_2_attack", kind == Hollowknight.Enemies.EnemyKind.Brawler ? e.transform.position.x + 1.5f : cx, cy, 2.6f);
+                yield return new WaitForSeconds(0.22f);
+                Shot(tag + "_3_after", kind == Hollowknight.Enemies.EnemyKind.Brawler ? e.transform.position.x + 1.5f : cx, cy, 2.6f);
+                ClearEnemies();
+                yield return new WaitForSeconds(0.2f);
+            }
+            // a kill, for the death animation + burst
+            Tp(-3f, 0.23f); p.FaceToward(-1);
+            var dead = SpawnEnemy(Hollowknight.Enemies.EnemyKind.Archer, -4.6f, ai: false);
+            yield return new WaitForSeconds(0.5f);
+            dead.GetComponent<Hollowknight.Enemies.EnemyHealth2D>().ApplyDamage(99, new Vector2(-3f, 0f));
+            yield return new WaitForSeconds(0.12f); Shot("Death_0", -4.2f, 0.9f, 2.0f);
+            yield return new WaitForSeconds(0.25f); Shot("Death_1", -4.2f, 0.9f, 2.0f);
+            yield return new WaitForSeconds(0.4f); Shot("Death_2", -4.2f, 0.9f, 2.0f);
+            ClearEnemies(); health.GodMode = false;
+            Log("enemy shots done");
+        }
+
+        /// <summary>
+        /// Frames of a brawler hitting a standing hero: the wind-up, the hold, the first frame of the blow, the instant it lands, the
+        /// hit freeze (real time), and the knock-back after it. Two blows (the punch, then the kick).
+        /// </summary>
+        // ====================================================================== nail timing (the hit counts on the animation keyframe) + hurt without hit-stop
+
+        class SwingRecord { public AttackDir dir; public int combo; public bool grounded; public float swingTime, clock, strike; public string spriteAtHit, spriteLater; }
+
+        /// <summary>A big target that always overlaps the swing box, so the first hit happens exactly when the hitbox goes live.</summary>
+        HitTarget SpawnBigDummy(Vector2 center, Vector2 size)
+        {
+            var go = new GameObject("PlaytestDummy");
+            go.transform.position = center;
+            var c = go.AddComponent<BoxCollider2D>(); c.size = size; c.isTrigger = true;
+            var t = go.AddComponent<HitTarget>();
+            t.pogo = false; t.recoilsPlayer = false; t.hitsToKill = 0;
+            spawned.Add(go);
+            return t;
+        }
+
+        /// <summary>One swing; records when (seconds into the swing) the first hit landed and which hero sprite was showing then and 40 ms later.</summary>
+        IEnumerator SwingRecordOne(PlayerCombat2D combat, Key[] with, System.Action<SwingRecord> done)
+        {
+            var heroSr = p.GetComponentInChildren<Animator>().GetComponent<SpriteRenderer>();
+            SwingRecord rec = null;
+            System.Action<HitTarget, AttackDir> onHit = (tgt, d) =>
+            {
+                if (rec != null) return;
+                rec = new SwingRecord { dir = d, combo = combat.ComboIndex, grounded = p.IsGrounded, swingTime = combat.SwingTime, clock = combat.SwingClock, strike = combat.StrikeTime, spriteAtHit = heroSr.sprite.name };
+            };
+            combat.Hit += onHit;
+            var keys = new System.Collections.Generic.List<Key>(with) { Key.J };
+            Keys(keys.ToArray()); yield return null; Keys(with);
+            for (float t = 0; t < 0.8f && rec == null; t += Time.deltaTime) yield return null;
+            for (float t = 0; t < 0.04f; t += Time.deltaTime) yield return null;
+            if (rec != null) rec.spriteLater = heroSr.sprite.name;
+            combat.Hit -= onHit;
+            for (float t = 0; t < 0.6f && combat.IsAttacking; t += Time.deltaTime) yield return null;
+            Keys();
+            done(rec);
+        }
+
+        static int FrameOf(string spriteName) => spriteName != null && spriteName.Length >= 2 && int.TryParse(spriteName.Substring(spriteName.Length - 2), out int n) ? n : -1;
+
+        IEnumerator NailTests()
+        {
+            var combat = p.GetComponent<PlayerCombat2D>();
+            var health = p.GetComponent<PlayerHealth2D>();
+            var tun = p.Tuning;
+            if (combat == null || health == null) yield break;
+            var hiddenP = new System.Collections.Generic.List<GameObject>();
+            foreach (var n in new[] { "Platform High", "Platform Low" }) { var g = GameObject.Find(n); if (g != null) { g.SetActive(false); hiddenP.Add(g); } }
+            yield return ResetDamageState(health);
+
+            // ---- S161-S165: each kind of swing hits on its animation keyframe (the swoosh appearing), not at the button press
+            // (the keyframe each swing counts on is whatever the owner has set in the tuning; its frame number is worked out from the clip's frame rate - the third value)
+            var results = new System.Collections.Generic.List<(string name, SwingRecord rec, int fps, float start)>();
+            SwingRecord r = null;
+
+            yield return Place(-9f, 0.23f, 0.5f); p.FaceToward(1);
+            SpawnBigDummy(new Vector2(-8.2f, 0.85f), new Vector2(6f, 4f));
+            yield return SwingRecordOne(combat, new Key[0], x => r = x); results.Add(("S161a ground swing 1 (SwordStandingSlash)", r, 16, tun.forwardSlashStartTime));
+            yield return new WaitForSeconds(0.1f);
+            yield return SwingRecordOne(combat, new Key[0], x => r = x); results.Add(("S161b ground swing 2 (ComboAttackB)", r, 12, tun.comboSlashStartTime));
+            yield return new WaitForSeconds(0.9f);
+            yield return Place(-9f, 0.23f, 0.4f); p.FaceToward(1);
+            yield return SwingRecordOne(combat, new[] { Key.W }, x => r = x); results.Add(("S163 up swing (AirSlashUp)", r, 14, tun.upSlashStartTime));
+            yield return new WaitForSeconds(0.5f);
+            foreach (var g in spawned) if (g != null) Destroy(g);
+            spawned.Clear();
+
+            yield return Place(-9f, 12f, 0.05f); p.FaceToward(1);
+            SpawnBigDummy(new Vector2(-8.2f, 11f), new Vector2(6f, 12f));
+            yield return SwingRecordOne(combat, new Key[0], x => r = x); results.Add(("S162 forward swing in the air (AirSlash)", r, 14, tun.airSlashStartTime));
+            yield return new WaitForSeconds(0.45f);
+            yield return Place(-9f, 14f, 0.05f);
+            foreach (var g in spawned) if (g != null) Destroy(g);
+            spawned.Clear();
+            SpawnBigDummy(new Vector2(-9f, 13f), new Vector2(6f, 12f));
+            yield return SwingRecordOne(combat, new[] { Key.S }, x => r = x); results.Add(("S164 down swing (AirSlashDown)", r, 14, tun.downSlashStartTime));
+            Keys();
+            foreach (var g in spawned) if (g != null) Destroy(g);
+            spawned.Clear();
+
+            foreach (var (name, rec, fps, start) in results)
+            {
+                if (rec == null) { Verdict(name + ": the swing hit the target", false, "no hit recorded"); continue; }
+                int frame = Mathf.FloorToInt(start * fps + 0.001f) + 1;                          // the animation frame that is on screen at the strike time
+                int fHit = FrameOf(rec.spriteAtHit), fLater = FrameOf(rec.spriteLater);
+                Verdict(name + ": the hit lands on its animation keyframe - " + rec.clock.ToString("F3") + " s into the swing ANIMATION (keyframe " + frame + " is at " + start.ToString("F3") + " s; the attack timer said " + rec.swingTime.ToString("F2") + "), hero sprite " + rec.spriteAtHit + " then " + rec.spriteLater + ", not at the button press",
+                    rec.clock >= start && rec.clock <= start + 0.045f && rec.strike == start && fHit >= frame && fLater >= frame && fLater <= frame + 1, "dir " + rec.dir + " combo " + rec.combo + " grounded " + rec.grounded + " strikeUsed " + rec.strike.ToString("F3"));
+            }
+            yield return WaitGrounded();
+            yield return ResetDamageState(health);
+
+            // ---- S166: the hero is hurt WITHOUT a hit-stop (the setting the owner asked for): the game never slows, the knock-back and hurt pose start at once
+            {
+                var heroAnim = p.GetComponentInChildren<Animator>();
+                var savedFreeze = tun.heroDamageFreeze;
+                tun.heroDamageFreeze = Hollowknight.Feel.FreezeType.None;
+                yield return Place(-8f, 0.23f, 0.5f);
+                SpawnDamager(new Vector2(-6f, 0.2f), new Vector2(1f, 1.4f), DamageKind.Enemy);
+                int hits0 = health.HitsTaken, freezes0 = Hollowknight.Feel.FreezeMoment.StartedCount;
+                bool landed = false;
+                Keys(Key.D);
+                yield return WaitForHit(health, hits0, 3f, ok => landed = ok);
+                bool frozenAtOnce = health.IsFrozen;
+                yield return null;
+                bool hurtPose = p.State == MotionState.Damaged && heroAnim.GetCurrentAnimatorStateInfo(0).IsName("HitDamage");
+                yield return new WaitForFixedUpdate(); yield return new WaitForFixedUpdate();
+                float vx = rb.linearVelocity.x;
+                float minScale = 1f;
+                for (float t = 0; t < 0.45f; t += Time.unscaledDeltaTime) { minScale = Mathf.Min(minScale, Time.timeScale); yield return null; }
+                Keys();
+                Verdict("S166 hurt with no hit-stop (heroDamageFreeze " + tun.heroDamageFreeze + "): the hit landed (" + landed + "), no freeze started (" + (Hollowknight.Feel.FreezeMoment.StartedCount - freezes0) + "), game speed never dropped (lowest " + minScale.ToString("F2") + "), hurt pose at once (" + hurtPose + "), knocked back at once (vx " + vx.ToString("F1") + ")",
+                    landed && !frozenAtOnce && Hollowknight.Feel.FreezeMoment.StartedCount == freezes0 && minScale > 0.99f && hurtPose && vx < -5f, "");
+                tun.heroDamageFreeze = savedFreeze;
+                yield return ResetDamageState(health);
+            }
+
+            foreach (var g in hiddenP) if (g != null) g.SetActive(true);
+            Keys();
+        }
+
+        /// <summary>Frames of the nail swings with the debug slash box on: the box must appear when the swoosh does.</summary>
+        IEnumerator NailShots()
+        {
+            var combat = p.GetComponent<PlayerCombat2D>();
+            var health = p.GetComponent<PlayerHealth2D>();
+            var heroSr = p.GetComponentInChildren<Animator>().GetComponent<SpriteRenderer>();
+            health.GodMode = true;
+            foreach (var n in new[] { "Platform High", "Platform Low" }) { var g = GameObject.Find(n); if (g != null) g.SetActive(false); }
+            var times = new[] { 0.02f, 0.05f, 0.07f, 0.09f, 0.12f, 0.15f, 0.2f, 0.26f };
+
+            IEnumerator Capture(string tag)
+            {
+                for (float w = 0; w < 0.4f && !combat.IsAttacking; w += Time.deltaTime) yield return null;      // the swing starts on the next physics step
+                foreach (float at in times)
+                {
+                    while (combat.IsAttacking && combat.SwingTime < at) yield return null;
+                    Shot(tag + "_" + Mathf.RoundToInt(at * 1000) + "ms", rb.position.x + 0.5f * p.FacingDirection, rb.position.y + 0.3f, 1.5f);
+                    Log("[" + tag + "] swing timer " + combat.SwingTime.ToString("F3") + " s, animation clock " + combat.SwingClock.ToString("F3") + " s: sprite " + heroSr.sprite.name + ", hitbox live " + combat.SlashActive + " (starts " + combat.StrikeTime.ToString("F3") + ")");
+                }
+                while (combat.IsAttacking) yield return null;
+            }
+
+            yield return Place(-9f, 0.23f, 0.5f); p.FaceToward(1);
+            SpawnBigDummy(new Vector2(-8.3f, 0.85f), new Vector2(0.6f, 1.6f));
+            Keys(Key.J); yield return null; Keys();
+            yield return Capture("A");
+            yield return new WaitForSeconds(0.1f);
+            Keys(Key.J); yield return null; Keys();
+            yield return Capture("B");
+            yield return new WaitForSeconds(0.9f);
+            Keys(Key.W, Key.J); yield return null; Keys(Key.W);
+            yield return Capture("Up");
+            Keys();
+            yield return new WaitForSeconds(0.5f);
+            yield return Place(-9f, 12f, 0.05f); p.FaceToward(1);
+            Keys(Key.J); yield return null; Keys();
+            yield return Capture("Air");
+            yield return new WaitForSeconds(0.4f);
+            yield return Place(-9f, 14f, 0.05f);
+            Keys(Key.S, Key.J); yield return null; Keys(Key.S);
+            yield return Capture("Down");
+            Keys();
+            ClearEnemies();
+            foreach (var g in spawned) if (g != null) Destroy(g);
+            spawned.Clear();
+            health.GodMode = false;
+            Log("nail shots done");
+        }
+
+        /// <summary>Frames of each ranged enemy at the end of its wind-up, on the first frame of the attack, and the moment its projectile appears.</summary>
+        IEnumerator RangedShots()
+        {
+            var health = p.GetComponent<PlayerHealth2D>();
+            health.GodMode = true;
+            foreach (var n in new[] { "Platform High", "Platform Low" }) { var g = GameObject.Find(n); if (g != null) g.SetActive(false); }
+            foreach (var (kind, x) in new[] { (Hollowknight.Enemies.EnemyKind.Gunner, -8f), (Hollowknight.Enemies.EnemyKind.Archer, -9f), (Hollowknight.Enemies.EnemyKind.BladeThrower, -8f) })
+            {
+                string tag = kind.ToString();
+                yield return Place(-2f, 0.23f, 0.3f); p.FaceToward(-1);
+                var e = SpawnEnemy(kind, x);
+                var b = e.GetComponent<Hollowknight.Enemies.EnemyBrain2D>();
+                var v = e.GetComponent<Hollowknight.Enemies.EnemyVisuals2D>();
+                float t = 0;
+                for (; t < 10f && b.State != Hollowknight.Enemies.EnemyState.Telegraph; t += Time.deltaTime) yield return null;
+                while (b.State == Hollowknight.Enemies.EnemyState.Telegraph && b.StateTime < b.Config.telegraphTime * 0.5f) yield return null;
+                Shot(tag + "_0_windup_half", e.transform.position.x + 1.2f, 0.9f, 1.7f);
+                while (b.State == Hollowknight.Enemies.EnemyState.Telegraph && b.StateTime < b.Config.telegraphTime - 0.03f) yield return null;
+                Shot(tag + "_1_windup_end", e.transform.position.x + 1.2f, 0.9f, 1.7f);
+                Log("[" + tag + "] wind-up end: clip " + v.CurrentClip + " at " + v.ScrubClipTime.ToString("F3"));
+                for (t = 0; t < 2f && b.State != Hollowknight.Enemies.EnemyState.Attack; t += Time.deltaTime) yield return null;
+                int seen = b.ShotsFired;
+                Shot(tag + "_2_attack_first_frame", e.transform.position.x + 1.2f, 0.9f, 1.7f);
+                Log("[" + tag + "] attack first frame: clip " + v.CurrentClip + " at " + v.ScrubClipTime.ToString("F3") + ", projectiles so far " + b.ShotsFired);
+                for (t = 0; t < 2f && b.ShotsFired == seen; t += Time.deltaTime) yield return null;
+                Shot(tag + "_3_projectile_leaves", e.transform.position.x + 1.2f, 0.9f, 1.7f);
+                Log("[" + tag + "] projectile leaves: clip " + v.CurrentClip + " at " + v.ScrubClipTime.ToString("F3") + " (release " + b.Config.shot.releaseTime.ToString("F3") + ")");
+                yield return new WaitForSeconds(0.12f);
+                Shot(tag + "_4_after", e.transform.position.x + 1.5f, 0.9f, 2.0f);
+                ClearEnemies();
+                yield return ResetDamageState(health);
+                health.GodMode = true;
+            }
+            health.GodMode = false;
+            Log("ranged shots done");
+        }
+
+        static float motor0(GameObject enemy) => enemy.GetComponent<Hollowknight.Enemies.EnemyMotor2D>().Velocity.x;
+
+        IEnumerator BrawlerShots()
+        {
+            var health = p.GetComponent<PlayerHealth2D>();
+            foreach (var n in new[] { "Platform High", "Platform Low" }) { var g = GameObject.Find(n); if (g != null) g.SetActive(false); }
+            for (int blow = 0; blow < 2; blow++)
+            {
+                string tag = "bw" + blow;
+                yield return ResetDamageState(health);
+                yield return Place(-3f, 0.23f, 0.3f);
+                p.FaceToward(-1);
+                var e = SpawnEnemy(Hollowknight.Enemies.EnemyKind.Brawler, -8f);
+                var b = e.GetComponent<Hollowknight.Enemies.EnemyBrain2D>();
+                var mv = e.GetComponent<Hollowknight.Enemies.EnemyVisuals2D>();
+                if (blow == 1) b.DebugSkipMove();                                                  // throw the kick this time
+                int hits0 = health.HitsTaken;
+                float t = 0;
+                for (; t < 8f && b.State != Hollowknight.Enemies.EnemyState.Telegraph; t += Time.deltaTime) yield return null;
+                float cx() => (e.transform.position.x + rb.position.x) * 0.5f;
+                // the wind-up in steps: the pose and the lean must keep changing right up to the blow (a held pose looked like the game stopping)
+                foreach (float at in new[] { 0f, 0.07f, 0.14f, 0.21f, 0.28f, 0.33f })
+                {
+                    while (b.State == Hollowknight.Enemies.EnemyState.Telegraph && b.StateTime < at) yield return null;
+                    Shot(tag + "_0_windup_" + Mathf.RoundToInt(at * 1000) + "ms", cx(), 0.7f, 1.7f);
+                    Log("[" + tag + "] wind-up +" + b.StateTime.ToString("F3") + " s: enemy x " + e.transform.position.x.ToString("F2") + ", lean " + mv.WindupOffset.ToString("F2") + ", speed " + motor0(e).ToString("F2"));
+                }
+                for (t = 0; t < 1f && b.State != Hollowknight.Enemies.EnemyState.Attack; t += Time.deltaTime) yield return null;
+                Log("[" + tag + "] attack begins: enemy x " + e.transform.position.x.ToString("F2") + ", hero x " + rb.position.x.ToString("F2") + " (centre gap " + Mathf.Abs(rb.position.x - e.transform.position.x).ToString("F2") + "), move " + b.CurrentMove.clip);
+                Shot(tag + "_2_attack_first_frame", cx(), 0.7f, 1.7f);
+                for (t = 0; t < 0.6f && health.HitsTaken == hits0; t += Time.deltaTime) yield return null;
+                Log("[" + tag + "] damage landed=" + (health.HitsTaken > hits0) + " after " + t.ToString("F3") + " s; enemy clip '" + mv.CurrentClip + "', hero state " + p.State + ", frozen " + health.IsFrozen);
+                Shot(tag + "_3_hit_frame", cx(), 0.7f, 1.7f);
+                // the freeze runs in real time: take frames at fixed real-time offsets from the hit
+                float start = Time.unscaledTime;
+                foreach (float at in new[] { 0.03f, 0.09f, 0.16f, 0.24f, 0.32f, 0.45f, 0.7f })
+                {
+                    while (Time.unscaledTime - start < at) yield return null;
+                    Shot(tag + "_4_after_" + Mathf.RoundToInt(at * 1000) + "ms", cx(), 0.7f, 1.7f);
+                    Log("[" + tag + "]   +" + at + " s: timeScale " + Time.timeScale.ToString("F2") + ", hero state " + p.State + ", hero x " + rb.position.x.ToString("F2"));
+                }
+                ClearEnemies();
+                yield return new WaitForSeconds(0.2f);
+            }
+            Log("brawler shots done");
         }
 
         IEnumerator MantleShots()
@@ -2614,7 +3441,7 @@ namespace Hollowknight.Dev
         void Finish()
         {
             tracking = false;
-            if (p != null && p.Tuning != null) p.Tuning.mantleEnabled = mantleSaved;     // tuning is a shared asset: put it back
+            if (p != null && p.Tuning != null) p.Tuning.mantleEnabled = mantleSaved;     // (the tuning here is the bot's own copy, see Start)
             Keys();
             EditorApplication.isPlaying = false;
         }

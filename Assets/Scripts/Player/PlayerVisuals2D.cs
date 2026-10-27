@@ -89,6 +89,7 @@ namespace Hollowknight.Player
             controller.SprintEnded += OnSprintEnded;
             controller.AirJumped += OnAirJump;
             controller.WallJumped += OnWallJump;
+            controller.DamageRecoilStarted += OnHurt;
             if (combat != null) combat.AttackStarted += OnAttackStarted;
         }
 
@@ -99,7 +100,37 @@ namespace Hollowknight.Player
             controller.SprintEnded -= OnSprintEnded;
             controller.AirJumped -= OnAirJump;
             controller.WallJumped -= OnWallJump;
+            controller.DamageRecoilStarted -= OnHurt;
             if (combat != null) combat.AttackStarted -= OnAttackStarted;
+        }
+
+        /// <summary>
+        /// Seconds into the swing animation the Animator is really at (false while the swing's clip is not the one playing yet).
+        /// The hit window follows THIS clock instead of a separate timer: the Animator starts a swing a little after the attack
+        /// begins (cross-fade, frame order), and a hit counted from the button press landed before the blade was on screen.
+        /// </summary>
+        public bool TryGetSwingTime(out float seconds)
+        {
+            seconds = 0f;
+            if (animator == null || !lockIsAttack || string.IsNullOrEmpty(current)) return false;
+            var info = animator.IsInTransition(0) ? animator.GetNextAnimatorStateInfo(0) : animator.GetCurrentAnimatorStateInfo(0);
+            if (!info.IsName(current)) return false;
+            seconds = info.normalizedTime * info.length;
+            return true;
+        }
+
+        /// <summary>
+        /// Shows the first hurt frame at once. The hit freeze starts right after the hit and an animator cross-fade runs on
+        /// game time, so waiting for the normal state switch would leave the old pose on screen for the whole freeze.
+        /// </summary>
+        void OnHurt()
+        {
+            if (animator == null || string.IsNullOrEmpty(hurt)) return;
+            lockUntil = 0f; lockIsAttack = false;
+            current = hurt;
+            animator.speed = 1f;
+            animator.Play(hurt, 0, 0f);
+            animator.Update(0f);                    // evaluate now, even though no time passes
         }
 
         void OnLanded() => OneShot(land, landTime);

@@ -307,6 +307,27 @@ Ours (`Assets/Scripts/Feel/`: `GameTime`, `FreezeMoment`, `ShakeProfile`, `Shake
   the hit with a FixedUpdate counter (the ramp-up after the hold lets ~3 knock-back steps run before the old counting started).
 - Not verified: how it FEELS by hand (nobody has played it); the shake is applied to the camera transform in LateUpdate, not at render time.
 
+### Nail hit timing (owner: "the hit lands before the animation is even midway; it should count at a particular keyframe")
+Cause: the slash hitbox went live on the very first physics step of the swing and stayed live for `slashActiveTime` (0.14 s), but the hero's slash art is a
+baked-in green swoosh that only appears from the second / third frame of each clip - frame 1 is the sword being drawn back. On top of that the Animator
+starts a swing a little after the attack begins (cross-fade + frame order): measured, the displayed frame trails the attack timer by about 0.03-0.05 s, so even a
+timer-based window would still hit before the swoosh is on screen.
+Measured from the clips (the art is 96x84 px, 32 ppu; keyframe = first frame where the swoosh is in front): SwordStandingSlash (16 fps) frame 2 at 0.0625 s,
+ComboAttackB (12 fps) frame 2 at 0.083 s (the blade thrusts out; frame 3 is an overhead swoosh above the hitbox), AirSlash (14 fps) frame 2 at 0.071 s,
+AirSlashUp frame 3 at 0.143 s, AirSlashDown frame 3 at 0.143 s.
+Ours: `PlayerTuning.forwardSlashStartTime / comboSlashStartTime / airSlashStartTime / upSlashStartTime / downSlashStartTime` hold those times; `PlayerCombat2D.SlashActive`
+is true from that moment for `slashActiveTime`. The window runs on the ANIMATOR's own clip time (`PlayerVisuals2D.TryGetSwingTime`, `PlayerCombat2D.SwingClock`), falling back
+to the attack timer only before the Animator has started the clip, so the hit counts exactly when the keyframe sprite is on screen. The owner's hand-tuned hitbox sizes /
+offsets (forward 1.1x1.2 at 0.8, up 1.4x0.8, down 1.4x0.5 at 0) were kept and are now the code defaults too. Side effects: the down-slash pogo bounce and the sideways recoil
+now start at the keyframe (~0.14 s after the press for the down swing), not instantly. Note for the owner: with the down box centred on the hero (offset 0) a target must
+overlap the hero's body for a pogo - tell me if pogoing on enemies below feels wrong now.
+Pogo consequence (found by the old test S35): the down swoosh now appears ~0.19 s after the press and the hero keeps falling, so a down-slash pressed
+just above a target can miss it. S35 now presses from higher up (y 6.0 instead of 3.7) and passes (hit 1x, bounce vy 15). If pogo feels late, lower
+`downSlashStartTime` (0.071 = AirSlashDown frame 2, the first thin arc) or widen the down box downward - the owner's call.
+Bot what-if: EditorPrefs `HK_DOWNBOX` = "sizeX,sizeY,offsetX,offsetY" overrides the down box for one run on the bot's tuning COPY (the bot never edits the tuning asset now).
+Tests S161a/b, S162, S163, S164 (one swing each, at a target that always overlaps the box: the hit lands on its keyframe with the keyframe sprite showing) and bot `HK_ONLY=nailshots`
+(PNG frames with the animation clock logged).
+
 ### Silk and bind (read with ilspycmd; effects are our own pixel art)
 Read (decompiled C#, `HeroController`): `AddSilk`, `TakeSilk`, `SilkGain` (1 silk per nail hit; per-hit "full / first hit / none"), silk regen
 (delay then duration per chunk, reset by any silk change; values are asset data), `CanBind`, `BindCompleted`, `BindInterrupted`, `AddHealth`.
@@ -400,6 +421,108 @@ Ours (`PlayerController2D` TryStartMantle / CheckClamberLedge / HandleMantle, tu
   S3d S8 S19 S37 S45a/d/e), so the bot switches the mantle OFF for every group except the mantle ones and restores it in `Finish()`.
 - Not done: `mantleRecovery` effects, no-clamber regions, hanging on a ledge (the pack has `LedgeHang` / `LedgeGrab`), flip / backflip jump variants
   out of the mantle, mantling while a swing is in recovery.
+
+### Enemies (art = recoloured copies of the DeadRevolver pack, logic = our own; structure of damage/death read from `HealthManager`)
+Read (decompiled C#, `HealthManager`): `Hit`, `TakeDamage`, `NonFatalHit`, `Die`. In my words: a hit is ignored if the enemy is dead, inside a short
+per-hit immunity window (`evasionByHitRemaining`), or the damage is 0; a hit from a protected direction is blocked ("Invincible", no damage);
+otherwise hit effects + flash play, the enemy recoils away (`recoil.RecoilByDirection`), a nail hit gives the hero silk (unless the enemy is flagged
+`DoNotGiveSilk`), hp drops by damage x multiplier, a non-fatal hit may play an alternate hit animation (`NonFatalHit`) and add stun damage, and at
+hp <= 0 `Die` runs once (death event, death effects incl. the kill freeze, corpse/fling, the object is removed). Not mirrored: the per-hit immunity
+window, direction blocking, stun damage, damage scaling, corpses/currency drops. Nail damage 1 (`PlayerTuning.nailDamage`) is our number.
+Art (owner's idea, decided with them): the pack's locomotion + weapon animations are reused for enemies, in recoloured copies.
+- `Hollowknight > Generate Enemy Variants` (`Editor/EnemyArtGenerator.cs`) copies only the needed clips per type into `Assets/EnemyArt/<Type>/`
+  (recoloured PNG frames, rebuilt `.anim` clips, one AnimatorController with a state per clip, tinted projectile / muzzle-flash / impact frames).
+  Recolour: grey/white body pixels -> a 3-colour ramp by brightness (gamma 1.6); saturated accent pixels (the weapons) -> an accent hue. The
+  `OnPreprocessTexture` postprocessor applies the pack's sprite settings (32 ppu, point filter, uncompressed, bottom-centre / centre pivot).
+  The pack is never modified. `Assets/EnemyArt/` is in .gitignore (derived from a licensed pack): regenerate after cloning.
+- Types (owner: no sword, the hero has it): **Gunner** (green, 4 hp, 3-shot burst, bullets + muzzle flash), **Archer** (purple, 3 hp, lobs arrows
+  that arc to the hero's chest), **Brawler** (orange, 6 hp, melee punch / kick in turns, hurts on touch; see "Brawler polish" below), **Blade Thrower** (blue, 3 hp, throws a
+  spinning blade that flies 7 u out and comes back). Numbers in `EnemyConfig` assets (`Assets/ScriptableObjects/Enemies/`, defaults in
+  `Scripts/Enemies/EnemyBuilder.cs`; menu `Reset Enemy Configs To Defaults`). All numbers are ours.
+- Code (`Scripts/Enemies/`): `EnemyMotor2D` (Rigidbody2D, own gravity scale, ground/wall/ledge/obstacle sensors, jump, knock-back; hero and other
+  enemies are walked through via IgnoreCollision), `EnemyHealth2D` (hp, nail hit via the `HitTarget` the slash finds, spark, stagger, death freeze +
+  shake + pixel burst, corpse can no longer be slashed because its HitTarget is removed), `EnemyBrain2D` (Patrol/Pause -> notice (sight range,
+  height, line of sight) -> Reposition (chase or keep a distance band) -> Telegraph ('!' pixel tell, aim line) -> Attack -> Recover; Hurt cancels an
+  attack; Dead), `EnemyVisuals2D` (animator state per brain state), `EnemyProjectile2D` (straight / ballistic / boomerang, hurts through
+  `DamageSource2D`, stopped by the world, impact flipbook), `SpriteFlipbook2D`, `EnemyFx` (pixel sparks / burst / '!' / aim line),
+  `EnemyArtSet`, `EnemyBuilder` (editor-only builder in the runtime assembly so the bot can spawn enemies).
+- Chase + jump (owner asked): while hunting it jumps onto obstacles / platform edges in its way (height <= `maxJumpHeight`), jumps after a hero
+  standing above it (<= 4 u away), jumps a gap with the hero beyond it, and steps off a ledge after a hero below it; patrolling never walks off a
+  platform (`canDropLedges` off). Jump speed is computed from the needed height and the enemy's own gravity.
+- Arena: `Hollowknight > Build Enemy Test Arena` -> root "Enemy Test Arena" in the open scene (refuses a scene without the hero): Brawler (-12),
+  Blade Thrower (-8.5), Archer on Platform High (-6), Gunner (7.5). Sight ranges are small enough that none notices the hero at spawn.
+- Effects (original pixel art, shared layer): amber / pink / etc. '!' above the head during the wind-up, a dotted aim line for ranged attacks, a hit
+  spark, a body-coloured death burst, landing dust; plus the pack's muzzle-flash and impact frames recoloured. Checked in rendered frames
+  (bot `enemyshots` -> PNGs).
+- Tests S130-S151 (`HK_ONLY=enemy`, enemies spawned by the bot): nail damage + silk, knock-back + stagger, death (3 hits), death freeze + burst,
+  corpse not a target, removal, contact damage, walking through enemies, gunner burst / '!' / hurt once, muzzle + impact, wall blocks sight, bullet
+  stopped by wall, archer arc from a ledge, boomerang out-and-back, brawler chases + jumps onto a 2.5-high block + strikes, patrol stays on the
+  platform, a hit cancels a wind-up, death animation. S152-S158 (a = punch, b = kick, added in the brawler polish): wind-up holds one frame before the
+  strike then resumes on it, hitbox live with the strike frame and ending just inside the limb tip, damage on the first strike frame with the limb
+  touching the hero's art, hurt pose + white flash + impact burst during the freeze (burst keeps moving while the game is frozen), knock-back after the freeze
+  away from the body.
+- Bugs found by the tests: `EnemyHealth2D` looked up the brain in Awake but a runtime-built enemy gets the health component first (no stagger, no
+  death animation) -> lazy lookup; S138 / S150 were timing flaws in the tests.
+- MISTAKE worth remembering: the editor had the pack's DemoScene open (not SampleScene) and my first arena build + save went into it. Removed
+  from the pack scene (back to its original 5 roots) and the builder now refuses a scene without the hero. Always check the active scene.
+- Not done: enemy armour / direction blocking, the per-hit immunity window, stun, more enemy types, drops, enemy-vs-enemy, boss logic, hero
+  parry of projectiles, sound.
+
+#### Brawler polish, round 1 (owner report: "no proper contact of sprite" + "sudden time stop, then I take the hit")
+Causes found (measured, not guessed):
+- The first brawler's hitbox was 1.4 wide centred 1.05 out = reached **1.75** from the body, but the fist in the art only reaches **1.06** (punch) /
+  **0.84** (kick, at head height). Together with the hero's collider being 0.8 wide while its art is only +-0.22 (idle), the hit landed with a visible
+  gap of about 0.7 units. The contact box (0.8) was also much wider than the enemy's art (+-0.25).
+- Timing: the punch clip started at the START of the 0.35 s wind-up and is only 0.375 s long (fist out on frame 3, at 0.125 s), so the fist had come
+  and gone before the 0.15 s hitbox even started.
+- The hit freeze (the original's HeroDamage: 0.01 s down, 0.28 s hold, 0.1 s up, game speed 0) started at the instant of damage, but
+  `PlayerController2D.State` is only updated in the next physics step, which never comes while the game is frozen - so the hero stayed in its
+  pre-hit pose for the whole freeze (an animator cross-fade also runs on game time), with nothing at all to show an impact, and only moved when time
+  resumed. That is the "stops, then I take the hit".
+What the original does (read from `HeroController.StartRecoil`, decompiled C#): reset motion, face the attacker, set `recoilFrozen`, send "DAMAGE" to
+the damage-effect state machine (the on-screen impact), start invulnerability, THEN the freeze, and only after it `recoiling` (the knock-back). So the
+hit is shown first and the knock-back follows the freeze - ours already had the second half right.
+Ours now:
+- `MeleeMove` (in `EnemyConfig`): clip, strike time, start range, hit window, animation speeds, follow-through, hitbox, limb reach. The brawler has two
+  (punch -> kick, taking turns). The swing is stepped by hand (`EnemyVisuals2D.ScrubMove`): the wind-up played up to just before the strike frame and held
+  there for the rest of the telegraph (with the '!' - REMOVED in round 2 below, it looked like a freeze), then the swing resumed on the strike frame at the same instant the hitbox goes live
+  (`EnemyBrain2D.StartAttack`) and the frame with the limb out is slowed (hitSpeed) so the blow reads. The hitbox ends just inside the limb tip and is live
+  only for `hitWindow`. The brawler plants its feet (`EnemyMotor2D.Halt`) when it starts a move, and starts it only when the limb will overlap the hero's art by
+  about a tenth of a unit (punch from 1.15, kick from 0.95, centre to centre). The knock-back pushes away from the enemy's body (`DamageSource2D.knockOrigin`),
+  not from the swing box. Contact box now as wide as the art (0.5).
+- Hero side: `BeginDamageRecoil` sets `State = Damaged` at once and raises `DamageRecoilStarted`; `PlayerVisuals2D.OnHurt` plays the first hurt frame immediately
+  (`Animator.Play` + `Update(0)`, no cross-fade). `PlayerHealth2D.HitImpact` runs before the freeze: a white-silhouette flash (`SpriteFlash2D` + the
+  `Hollowknight/SpriteFlash` shader, `heroHitFlashTime` 0.12 s real time) and `HeroHitFx` - our own pixel burst (shock ring, sparks along the knock-back, a streak)
+  at the middle of where the swing box overlaps the hero. The burst particles move in REAL time (`PixelFxLayer.Emit(..., unscaled: true)`), so the frozen frame
+  is an impact that keeps unfolding instead of a still picture. The invulnerability flicker waits out the freeze (it hung half-transparent before).
+- ROUND 2 (owner: "when the warning shows up there is a stop in the animation, it looks laggy; the attack should look smooth and natural, not stop at the last
+  minute"): the cause was my own design - during the telegraph the wind-up pose was HELD for ~0.22 s (animator speed 0) and the brawler stopped dead from a full
+  run (`Halt`). Now: the wind-up frames are stretched evenly over the whole telegraph (the animation never holds), the body leans back `pullBack` (0.16 / 0.19 u,
+  whole art pixels, ease-out) and snaps forward over the last 30 % into the blow, so the lean is back at 0 exactly when the strike frame starts (reach unchanged);
+  the brawler starts braking early (`brake = 1.25 v^2/2a`, measured) and slides to a stop during the wind-up with a dust puff instead of freezing; the animation
+  after the strike runs to the clip's last frame exactly as the attack ends (`MeleeMove.FollowThrough` is computed, no hold at the end), and the slow-down on the
+  strike frame is much milder (hitSpeed 0.75, hitWindow 0.08 s). Tests: S152 (continuous, no held pose), S159 (lean back, then back on its spot at the strike),
+  S160 (brakes 5.2 -> 0 u/s over ~0.14 s). (S152-S158 above describe round 1; S152 is now the "no held pose" check.) Frames: `HK_ONLY=brawlershots` now writes the wind-up every ~0.07 s.
+- ROUND 3 (owner: "the freeze is still there after the enemy lands the hit, I don't want that"): `PlayerTuning.heroDamageFreeze` is now **None** (asset and code
+  default), so the game never slows when the hero is hurt; the hurt pose, white flash, impact burst, shake, knock-back and invulnerability flicker all still happen at once.
+  The original's HeroDamage freeze (0.28 s) is one tuning change away (`heroDamageFreeze = HeroDamage`, or `HeroDamageShort`). `FreezeMoment.GetTiming(None)` is now safe.
+  Test S166 checks the no-freeze behaviour; the freeze tests (S52, FS22, S155-S157) run on the bot's tuning copy with HeroDamage switched on.
+- ROUND 4 (owner: "the same issue with the enemy - it lands the hit first and then the animation completes"): audited every enemy attack, damage / projectile time vs the
+  animation frame on screen. The three RANGED enemies were wrong: the projectile left on the first physics step of the attack while the firing animation was still on
+  its first frame (gunner: recoil frame is at 0.125 s; archer: release flash at 0.042 s; blade thrower: the throw frame at 0.143 s), and the thrower was backwards - its whole
+  throw animation played during the telegraph and the blade appeared after it; the archer's draw clip (0.44 s) played then HELD its last frame for the other 0.36 s of the
+  telegraph; the gunner's 3-shot burst played ONE 0.31 s firing clip for 3 bullets. Fixed with `ShotMove` (in `EnemyConfig`): the wind-up clip is stretched over the
+  telegraph (never held), each shot plays the firing clip from `leadIn` seconds before the release frame, and the projectile leaves exactly when the clip reaches
+  `releaseTime`; a burst replays the clip per bullet (`EnemyBrain2D.TryGetAttackPose`, the pose is computed from the brain's own clock and `EnemyVisuals2D` just scrubs it, so the
+  animation and the damage can never drift apart). The brawler already hit on its strike frame; it now also gets `hitDelay` (punch 0.04 s, kick 0.05 s): the limb is seen
+  reaching out first, THEN it connects - the hit no longer lands on the very frame the limb appears. Existing config assets were NOT reset: only the new `shot` blocks and
+  `hitDelay` values were written (the owner's Brawler `maxHealth` 5000 is untouched). `EnemyBuilder.Defaults` is public now (read-only use by tools) and has the same numbers.
+  Tests: S170-S172 (projectile on the release frame: gunner 3/3 bullets, archer, thrower), S171b/S172b (wind-up keeps moving), S153/S154 updated for hitDelay;
+  frames: bot `HK_ONLY=rangedshots`.
+- The freeze length (when switched on) is unchanged (the original's 0.28 s hold). If it still feels long, set `PlayerTuning.heroDamageFreeze` to `HeroDamageShort` (0.15 s).
+- Checked in rendered frames (bot `HK_ONLY=brawlershots`, PNGs in `HK_SHOTDIR`): wind-up held pose, strike frame with the fist overlapping the hero's chest, white
+  flash + expanding ring during the freeze, hurt pose in natural colours later in the freeze, knock-back after. Tests S152-S158 (a and b = punch and kick).
+- Own guesses: every number above (reach margins, hit window, hit speed, flash length, burst size/colours).
 
 ## Design notes (HK field names -> ours)
 JUMP_STEPS / JUMP_STEPS_MIN -> jumpSteps / jumpStepsMin

@@ -120,19 +120,29 @@ namespace Hollowknight.Player
         public float attackDuration = 0.30f;
         [Tooltip("Time from the start of a swing until the next may start. Never shorter than the duration (the original clamps it).")]
         public float attackCooldown = 0.36f;
-        [Tooltip("How long the damaging hitbox is active at the start of a swing.")]
+        [Tooltip("How long the damaging hitbox stays live once it has started (see the slash start times below: it starts at the animation keyframe where the blade arrives, not when the button is pressed).")]
         public float slashActiveTime = 0.14f;
+        [Tooltip("The hit only counts from this many seconds into the swing - the keyframe where the green slash first sweeps out in front (DeadRevolver SwordStandingSlash frame 2 at 16 fps). Before it the sword is still being drawn back, so a hit would land with the animation not even half way.")]
+        public float forwardSlashStartTime = 0.0625f;
+        [Tooltip("Second ground swing (ComboAttackB frame 2 at 12 fps): the blade thrusts out in front.")]
+        public float comboSlashStartTime = 0.083f;
+        [Tooltip("Forward swing in the air (AirSlash frame 2 at 14 fps): the big sweep.")]
+        public float airSlashStartTime = 0.071f;
+        [Tooltip("Up swing (AirSlashUp frame 3 at 14 fps): the swoosh peaks above the head.")]
+        public float upSlashStartTime = 0.143f;
+        [Tooltip("Down swing (AirSlashDown frame 3 at 14 fps): the V-shaped swoosh.")]
+        public float downSlashStartTime = 0.143f;
         [Tooltip("An attack pressed this many fixed steps early is remembered.")]
         public int attackBufferSteps = 6;
         [Tooltip("The two-swing combo restarts if the gap since the last swing exceeds duration + this, or the direction changes.")]
         public float comboResetTime = 0.4f;
         [Tooltip("Forward slash: box size and the offset of its centre from the player (x is mirrored with facing).")]
-        public Vector2 forwardSlashSize = new Vector2(1.6f, 1.2f);
-        public Vector2 forwardSlashOffset = new Vector2(1.2f, 0.15f);
-        public Vector2 upSlashSize = new Vector2(1.4f, 1.5f);
+        public Vector2 forwardSlashSize = new Vector2(1.1f, 1.2f);          // (these defaults are the owner's hand-tuned boxes, fitted to the slash art)
+        public Vector2 forwardSlashOffset = new Vector2(0.8f, 0.15f);
+        public Vector2 upSlashSize = new Vector2(1.4f, 0.8f);
         public Vector2 upSlashOffset = new Vector2(0f, 1.15f);
-        public Vector2 downSlashSize = new Vector2(1.4f, 1.4f);
-        public Vector2 downSlashOffset = new Vector2(0f, -1.1f);
+        public Vector2 downSlashSize = new Vector2(1.4f, 0.5f);
+        public Vector2 downSlashOffset = new Vector2(0f, 0f);
         [Tooltip("Hitting something with a sideways slash pushes you away for this many fixed steps at the speed below.")]
         public int recoilSteps = 5;
         public float recoilSpeed = 8f;
@@ -161,10 +171,12 @@ namespace Hollowknight.Player
         [Tooltip("Invulnerability flicker: seconds per on/off pulse, and the opacity of the dim phase.")]
         public float flickerInterval = 0.08f;
         [Range(0f, 1f)] public float flickerDimAlpha = 0.3f;
+        [Tooltip("When hurt the hero's sprite is a white silhouette for this long (real seconds, so it shows during the hit freeze). 0 = no flash. Our own addition: the original plays a damage effect at this moment.")]
+        public float heroHitFlashTime = 0.12f;
 
         [Header("Hit-stop & screen shake (freeze timings are read from the original; which freeze / shake goes with which event, and the shake sizes in ShakePresets.cs, are our own choices)")]
-        [Tooltip("Freeze when the hero is hurt or dies. None = no freeze. HeroDamage stops the game ~0.28 s, HeroDamageShort ~0.15 s.")]
-        public FreezeType heroDamageFreeze = FreezeType.HeroDamage;
+        [Tooltip("Freeze when the hero is hurt or dies. None = no freeze (the owner does not want the game to stop when the hero is hit). HeroDamage stops the game ~0.28 s (the original's), HeroDamageShort ~0.15 s.")]
+        public FreezeType heroDamageFreeze = FreezeType.None;
         [Tooltip("Camera shake when the hero is hurt.")]
         public ShakePreset heroDamageShake = ShakePreset.Average;
         [Tooltip("Camera shake when the hero dies.")]
@@ -231,6 +243,10 @@ namespace Hollowknight.Player
         public int mantleJumpCancelStep = 2;
         [Tooltip("Steps after a cancelled mantle before another may start (guess).")]
         public int mantleCooldownSteps = 10;
+
+        [Header("Nail damage (our own number: the original's nail damage grows with upgrades)")]
+        [Tooltip("Health an enemy loses per nail hit.")]
+        public int nailDamage = 1;
 
         [Header("Ground check")]
         public LayerMask groundMask = ~0;

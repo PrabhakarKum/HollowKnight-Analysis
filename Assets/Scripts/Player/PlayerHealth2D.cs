@@ -62,6 +62,8 @@ namespace Hollowknight.Player
         PlayerCombat2D combat;
         Rigidbody2D rb;
         SpriteRenderer flickerRenderer;
+        SpriteFlash2D flash;
+        Collider2D bodyCollider;
         PlayerTuning Tuning => controller.Tuning;
 
         float invulnerableLeft;
@@ -75,6 +77,12 @@ namespace Hollowknight.Player
             rb = GetComponent<Rigidbody2D>();
             var animator = GetComponentInChildren<Animator>();
             flickerRenderer = animator != null ? animator.GetComponent<SpriteRenderer>() : GetComponentInChildren<SpriteRenderer>();
+            bodyCollider = GetComponent<Collider2D>();
+            if (flickerRenderer != null)
+            {
+                flash = flickerRenderer.GetComponent<SpriteFlash2D>();
+                if (flash == null) flash = flickerRenderer.gameObject.AddComponent<SpriteFlash2D>();
+            }
         }
 
         void Start()
@@ -131,8 +139,9 @@ namespace Hollowknight.Player
                 return true;
             }
 
+            HitImpact(info);
+            HurtFeedback(Tuning.heroDamageShake);                 // (before the invulnerability flicker starts, which waits out the freeze)
             StartInvulnerable(Tuning.invulnerableTime);
-            HurtFeedback(Tuning.heroDamageShake);
             if (info.Kind == DamageKind.Hazard)
             {
                 IsRespawning = true;
@@ -185,7 +194,8 @@ namespace Hollowknight.Player
                 invulnerableLeft -= Time.deltaTime;
                 if (flickerRenderer != null)
                 {
-                    bool dim = Mathf.FloorToInt(Time.time / Mathf.Max(0.01f, Tuning.flickerInterval)) % 2 == 0;
+                    // solid while the hit freeze runs (game time stands still, so a pulse would just hang half-transparent)
+                    bool dim = !FreezeMoment.IsFrozen && Mathf.FloorToInt(Time.time / Mathf.Max(0.01f, Tuning.flickerInterval)) % 2 == 0;
                     var c = baseColor; c.a = dim ? Tuning.flickerDimAlpha : baseColor.a;
                     flickerRenderer.color = c;
                 }
@@ -195,6 +205,26 @@ namespace Hollowknight.Player
             IsInvulnerable = false;
             invulnerableLeft = 0f;
             invulnerableRoutine = null;
+        }
+
+        /// <summary>
+        /// What the player SEES at the moment of the hit, shown before the freeze takes hold so the frozen frame is an impact:
+        /// a white flash of the hero and a pixel burst where the hurting thing meets the hero.
+        /// </summary>
+        void HitImpact(DamageInfo info)
+        {
+            Vector2 at = bodyCollider != null ? (Vector2)bodyCollider.bounds.center : rb.position;
+            var src = info.Source != null ? info.Source.GetComponent<Collider2D>() : null;
+            if (src != null && bodyCollider != null)
+            {
+                // the middle of where the two shapes overlap, nudged toward the hero (its art is narrower than its collider)
+                Bounds a = bodyCollider.bounds, b = src.bounds;
+                float x0 = Mathf.Max(a.min.x, b.min.x), x1 = Mathf.Min(a.max.x, b.max.x);
+                float y0 = Mathf.Max(a.min.y, b.min.y), y1 = Mathf.Min(a.max.y, b.max.y);
+                if (x1 >= x0 && y1 >= y0) at = Vector2.MoveTowards(new Vector2((x0 + x1) * 0.5f, (y0 + y1) * 0.5f), a.center, 0.15f);
+            }
+            HeroHitFx.Play(at, rb.position.x >= info.SourceX ? 1 : -1);
+            if (flash != null) flash.Flash(Tuning.heroHitFlashTime);
         }
 
         /// <summary>Hit-stop + camera shake when the hero is hurt (the freeze table and stacking live in FreezeMoment / GameTime).</summary>

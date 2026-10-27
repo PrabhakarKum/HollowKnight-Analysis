@@ -67,7 +67,8 @@ namespace Hollowknight.Feel
         public static int ActiveCount => active;
         public static int StartedCount { get; private set; }
 
-        public static Timing GetTiming(FreezeType type) => table[(int)type];
+        /// <summary>The timing of a freeze type; FreezeType.None has no freeze at all (zero time, game speed stays 1).</summary>
+        public static Timing GetTiming(FreezeType type) => type == FreezeType.None ? new Timing(0f, 0f, 0f, 1f) : table[(int)type];
 
         /// <summary>Starts a freeze. FreezeType.None does nothing.</summary>
         public static void Start(FreezeType type)

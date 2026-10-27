@@ -8,7 +8,7 @@ A **learning project**: study how Hollow Knight: Silksong-style player mechanics
 
 ## What is built
 
-Run, variable-height jump, double jump, dash, sticky wall slide / wall jump, attacks (forward / up / down, combo, recoil, pogo), hard landing, camera (look-ahead, look-down, lock zones, shake), hit-stop, health + damage + invulnerability + hazards + death/respawn, silk + bind (heal), sprint + sprint jump. Effects (bind, sprint dust) are original pixel art drawn in code.
+Run, variable-height jump, double jump, dash, sticky wall slide / wall jump, attacks (forward / up / down, combo, recoil, pogo), hard landing, camera (look-ahead, look-down, lock zones, shake), hit-stop, health + damage + invulnerability + hazards + death/respawn, silk + bind (heal), sprint + sprint jump, ledge mantle, and four enemy types (gunner, archer, brawler, blade thrower) with chase / jump AI. Effects (bind, sprint dust, hit impact, enemy sparks) are original pixel art drawn in code; the hero's hit flash is a small sprite shader (`Assets/Shaders/SpriteFlash.shader`).
 
 ## Where to read more
 
@@ -20,7 +20,9 @@ Run, variable-height jump, double jump, dash, sticky wall slide / wall jump, att
 ```
 Assets/Scripts/Player/   controller, tuning (ScriptableObject), combat, health, silk/bind, sprint, effects, visuals
 Assets/Scripts/Camera/   follow camera + lock zones
-Assets/Scripts/Feel/     hit-stop, screen shake, pixel-effect helpers
+Assets/Scripts/Feel/     hit-stop, screen shake, pixel-effect helpers, sprite flash
+Assets/Scripts/Enemies/  enemy config (ScriptableObject), motor, brain, health, visuals, projectiles, effects
+Assets/Shaders/          SpriteFlash - unlit sprite shader with a white-silhouette "flash" control
 Assets/Scripts/Dev/      PlaytestBot - editor-only automated play-mode tests
 Assets/Editor/           setup menus (Hollowknight > ...)
 Backups/                 a full copy of the test bot from before the suite was shortened
@@ -36,6 +38,10 @@ These are licensed packs and are excluded on purpose (see `.gitignore`). The pro
 | vHierarchy, vInspector, vFolders (editor tools, optional) | `Assets/Plugins/` |
 
 After re-importing the sprites run `Hollowknight > Use DeadRevolver Sprites On Player` and `Hollowknight > Bake Sprite Edges`.
+
+The **enemies** reuse the pack's player animations and weapon sets as recoloured copies. Those copies are derived from the licensed pack, so
+`Assets/EnemyArt/` is also not in the repository. Generate it with `Hollowknight > Generate Enemy Variants`, then run
+`Hollowknight > Build Enemy Test Arena` with `SampleScene` open.
 
 ## Testing
 

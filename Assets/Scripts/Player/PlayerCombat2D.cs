@@ -24,7 +24,21 @@ namespace Hollowknight.Player
         public AttackDir CurrentDir { get; private set; }
         /// <summary>0 or 1: which of the two alternating swings the current / last attack used.</summary>
         public int ComboIndex { get; private set; }
-        public bool SlashActive => IsAttacking && attackTimer <= Tuning.slashActiveTime;
+        /// <summary>
+        /// True while the damaging hitbox is live: from the swing animation's strike keyframe (see StrikeTime) for slashActiveTime.
+        /// Not from the button press - the sword is still being drawn back then. It never starts before the keyframe is on screen
+        /// (it is checked on the next physics step after, so at most one step late).
+        /// </summary>
+        public bool SlashActive => IsAttacking && SwingClock >= StrikeTime && SwingClock <= StrikeTime + Tuning.slashActiveTime;
+        /// <summary>Seconds into the current swing at which its hit counts (the animation keyframe where the blade arrives).</summary>
+        public float StrikeTime { get; private set; }
+        /// <summary>Seconds since the current swing began (the attack timer).</summary>
+        public float SwingTime => attackTimer;
+        /// <summary>
+        /// How far into the swing ANIMATION we are: the Animator's own clip time when it is playing the swing, otherwise the attack timer
+        /// (the first physics steps, before the Animator has started the clip). The hit window runs on this clock.
+        /// </summary>
+        public float SwingClock => visuals != null && visuals.TryGetSwingTime(out float clip) ? clip : attackTimer;
         public int SwingsStarted { get; private set; }
         /// <summary>How many swings have given their first-hit freeze / shake (one per swing that connected).</summary>
         public int FirstHitFeedbackCount { get; private set; }
@@ -35,6 +49,7 @@ namespace Hollowknight.Player
         public event Action<HitTarget, AttackDir> Hit;
 
         PlayerController2D controller;
+        PlayerVisuals2D visuals;
         PlayerTuning Tuning => controller.Tuning;
         InputAction attackAction;
         bool attackPressedFlag;
@@ -55,6 +70,7 @@ namespace Hollowknight.Player
         void Awake()
         {
             controller = GetComponent<PlayerController2D>();
+            visuals = GetComponentInChildren<PlayerVisuals2D>(true);
             filter = new ContactFilter2D { useTriggers = true, useLayerMask = false };
 
             attackAction = new InputAction("Attack", InputActionType.Button);
@@ -143,6 +159,13 @@ namespace Hollowknight.Player
                 else if (dir == AttackDir.Up) controller.PushOffWall(Tuning.upSlashWallPush);
                 else controller.CancelWallSlide();
             }
+
+            // which animation the swing plays (PlayerVisuals2D picks the same one) decides the keyframe its hit counts on
+            bool grounded = controller.IsGrounded;
+            StrikeTime = dir == AttackDir.Up ? Tuning.upSlashStartTime
+                       : dir == AttackDir.Down ? Tuning.downSlashStartTime
+                       : grounded ? (ComboIndex == 0 ? Tuning.forwardSlashStartTime : Tuning.comboSlashStartTime)
+                       : Tuning.airSlashStartTime;
 
             CurrentDir = dir;
             prevDir = dir;

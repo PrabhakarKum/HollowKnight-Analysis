@@ -55,6 +55,8 @@ namespace Hollowknight.Player
         public bool IsMantling => mantling;
 
         // one-off moments, for animation / audio / effects
+        /// <summary>Raised the moment a hit knocks the hero back (before the hit freeze).</summary>
+        public event System.Action DamageRecoilStarted;
         public event System.Action GroundJumped, AirJumped, WallJumped, Landed, DashStarted, HardLanded, SprintStarted, ShuttleJumped, MantleFinished, MantleCancelled;
         /// <summary>world position of the ledge corner being climbed</summary>
         public event System.Action<Vector2> MantleStarted;
@@ -834,6 +836,10 @@ namespace Hollowknight.Player
             damageRecoilSteps = Mathf.Max(1, steps);
             if (velocity.x != 0f) FaceDirection(velocity.x > 0f ? -1 : 1);
             rb.linearVelocity = velocity;
+            // The hit freeze starts right after this call and stops the physics steps that would update the state, so the
+            // hurt pose is set here, not a step later - otherwise the freeze would hold the pose from before the hit.
+            State = MotionState.Damaged;
+            DamageRecoilStarted?.Invoke();
         }
 
         /// <summary>Dying: actions are dropped, input is ignored, the body just falls to the ground.</summary>

@@ -103,6 +103,7 @@ namespace Hollowknight.Feel
             public Transform home;
             public Vector2 homeOffset;
             public float homePull;
+            public bool unscaled;
         }
 
         const int MaxLive = 400;
@@ -116,9 +117,11 @@ namespace Hollowknight.Feel
         /// <summary>
         /// Emits one square pixel particle. Colour fades from 'from' to 'to' over its life and it blinks out at the end.
         /// If 'home' is set it is pulled toward that point (and absorbed on arrival), which is how motes gather on the hero.
+        /// 'unscaled' makes it move in real time, so it keeps going while the game is frozen (hit-stop impact bursts).
         /// </summary>
         public void Emit(Vector2 pos, Vector2 vel, float life, Color from, Color to, int sizePx = 2,
-                         float drag = 0f, float gravity = 0f, Transform home = null, Vector2 homeOffset = default, float homePull = 0f)
+                         float drag = 0f, float gravity = 0f, Transform home = null, Vector2 homeOffset = default, float homePull = 0f,
+                         bool unscaled = false)
         {
             if (live.Count >= MaxLive) return;
             SpriteRenderer sr = pool.Count > 0 ? pool.Pop() : NewRenderer();
@@ -127,7 +130,7 @@ namespace Hollowknight.Feel
             live.Add(new Particle
             {
                 sr = sr, pos = pos, vel = vel, life = life, maxLife = life, drag = drag, gravity = gravity,
-                from = from, to = to, sizePx = sizePx, home = home, homeOffset = homeOffset, homePull = homePull
+                from = from, to = to, sizePx = sizePx, home = home, homeOffset = homeOffset, homePull = homePull, unscaled = unscaled
             });
             TotalEmitted++;
             Apply(live.Count - 1);
@@ -145,11 +148,13 @@ namespace Hollowknight.Feel
 
         void Update()
         {
-            float dt = Time.deltaTime;
-            if (dt <= 0f) return;
+            float scaledDt = Time.deltaTime, realDt = Time.unscaledDeltaTime;
+            if (scaledDt <= 0f && realDt <= 0f) return;
             for (int i = live.Count - 1; i >= 0; i--)
             {
                 var p = live[i];
+                float dt = p.unscaled ? realDt : scaledDt;
+                if (dt <= 0f) continue;                                // frozen (hit-stop): scaled particles hold still
                 p.life -= dt;
                 bool absorbed = false;
                 if (p.home != null && p.homePull > 0f)

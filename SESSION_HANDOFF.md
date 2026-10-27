@@ -45,6 +45,8 @@ Assets/Scripts/Player/
   DamageSource2D.cs       enemy body / spikes: hurts the hero while overlapping (polls; kind = Enemy or Hazard)
   SimplePatrol2D.cs       kinematic test enemy that walks between two x positions
   HealthHud2D.cs          IMGUI masks + silk pips top-left (placeholder UI)
+Assets/Scripts/Enemies/   EnemyConfig / Motor / Health / Brain / Visuals / Projectile / Fx / ArtSet / SpriteFlipbook2D, EnemyBuilder (editor-only)
+Assets/Editor/            EnemyArtGenerator.cs (recolours the pack into Assets/EnemyArt, gitignored), EnemyArenaBuilder.cs (menu items)
   PlayerSilk2D.cs         silk (0-9, +1 per nail hit) and bind (hold F / gamepad North: 1 s, costs 9, heals 3 - all guesses)
   BindEffect2D.cs         our own pixel-art bind / silk effects (dithered glow + square motes); uses Feel/PixelFx.cs
   SprintFx2D.cs           our own pixel-art sprint dust / speed dashes / skid / sprint-jump effects
@@ -124,7 +126,31 @@ J / C / left mouse / gamepad West = attack; hold W/Up = up-slash; hold S/Down in
   cancels it). The ledge test is the original's (read from the DLL, probes adapted to our wider collider); the climb timing is a guess.
   `PlayerTuning.mantleEnabled=false` restores the old behaviour. Details: HOLLOWKNIGHT_ANALYSIS.md "Ledge mantle / clamber".
 
-Known gaps / not done: mantle hang / flip variants, silk regen / upgrades, back-sprint / wall-sprint launch, per-state camera look-ahead for sprint/harpoon, wall-slide acceleration detail, tools,
+- **Enemies** (added after mantle): Gunner, Archer, Brawler, Blade Thrower - recoloured COPIES of the DeadRevolver pack's player animations with its
+  weapon sets (owner's idea; no sword enemy because the hero uses it), chasing + jumping, health / nail damage / death, projectiles, original pixel
+  effects. The generated art is NOT in the repo (`Assets/EnemyArt/` is gitignored): after cloning run `Hollowknight > Generate Enemy Variants`, then
+  `Hollowknight > Build Enemy Test Arena` (SampleScene must be open - the builder refuses a scene without the hero). `HK_ONLY=enemy` /
+  `enemyshots`. Details + what is guessed: HOLLOWKNIGHT_ANALYSIS.md "Enemies".
+  Environment lesson: the editor once had the pack's DemoScene open and the first arena build went into it; always check the active scene before
+  building objects or calling SaveOpenScenes from a command.
+  **The owner keeps changing values between turns** (seen so far: nail boxes, Brawler maxHealth 5000, hero `maxHealth` 100, `downSlashStartTime` 0.071). The bot therefore pins what its
+tests assume on its own tuning copy (maxHealth 5, hit-stop ON) and derives expected animation frames from the tuning values instead of hard-coding them. A test failing after the
+owner played usually means "their value differs from what the test assumed" - check the tuning first, don't revert their number.
+**OWNER'S OWN EDITS - NEVER OVERWRITE:** the owner hand-tunes values in the Inspector (nail hitboxes in `PlayerTuning`: forward 1.1x1.2 at (0.8, 0.15), up 1.4x0.8, down 1.4x0.5 at (0, 0);
+Brawler `maxHealth` 5000 for testing; maybe more). Do NOT run `Reset Enemy Configs To Defaults` / `GetConfig(reset:true)` / `Build Enemy Test Arena` without asking - they overwrite the
+configs and scene enemies. Before touching assets, check for unsaved edits (`EditorUtility.IsDirty`, compare `SerializedObject` with `InternalEditorUtility.LoadSerializedFileAndForget`).
+The bot now works on a COPY of the tuning (swapped into the player at start), so a run can never leave tuning edited.
+Hero hit-stop is OFF at the owner's request (`heroDamageFreeze = None`); the nail's hit counts on the swing animation's keyframe (see HOLLOWKNIGHT_ANALYSIS.md "Nail hit timing").
+**Polishing them one by one from the owner's hand-play reports.** Brawler (round 1, done): the owner saw "no proper contact" and "sudden time stop,
+  then the hit". Fixed: hitbox/timing now come from the measured art (`MeleeMove` in `EnemyConfig`: punch fist reaches 1.06 u, kick 0.84 u; the swing is
+  stepped by hand so the strike frame and the hitbox go live together), contact box matches the art, knock-back pushes away from the body; the hero now shows
+  its hurt pose + a white flash + our own pixel impact burst at the freeze instant (the freeze itself is unchanged, the original's 0.28 s). New: `Assets/Shaders/SpriteFlash.shader`,
+  `Feel/SpriteFlash2D.cs`, `Player/HeroHitFx.cs`; bot `HK_ONLY=brawlershots` (PNG frames) and tests S152-S158. Details: HOLLOWKNIGHT_ANALYSIS.md "Brawler polish".
+  NEXT: wait for the owner's feedback on the brawler by hand, then do the gunner, archer and blade thrower the same way (measure the art, align the shot with the
+  firing frame, check rendered frames). After editing `EnemyConfig`/`EnemyBuilder.Defaults` run `Hollowknight > Reset Enemy Configs To Defaults` (or `GetConfig(kind, reset:true)`)
+  and rebuild the arena - the saved config assets and scene enemies do not pick up new defaults by themselves.
+
+Known gaps / not done: enemy armour / stun / drops, more enemy types, mantle hang / flip variants, silk regen / upgrades, back-sprint / wall-sprint launch, per-state camera look-ahead for sprint/harpoon, wall-slide acceleration detail, tools,
 silk/resources, real enemies (only dummies, a patrolling test enemy and spikes exist), other damage types, parry, hurt/death
 animation check by eye (uses the pack's `HitDamage` and `Die` clips).
 
@@ -145,7 +171,13 @@ EditorApplication.isPlaying = true;
 ```
 Read results with bash: find the last line containing `[PLAYTEST] keyboard`, then grep `[PLAYTEST] PASS|FAIL` after it, wait for
 `[PLAYTEST] DONE`. TEST SUITE SIZE (owner asked to shrink it): the DEFAULT run (`HK_ONLY=""`) now runs only the newer mechanics - damage S50-S67, hit-stop/shake FS*,
-silk + bind S70-S82, sprint S90-S106, mantle S110-S119 = 78 checks (~3 min; was 69 + mantle 9). Latest `all` run (old + new): **145 PASS / 0 FAIL**.
+silk + bind S70-S82, sprint S90-S106, mantle S110-S119, enemies S130-S172 = ~125 checks (~6 min). Latest `all` run (old + new, with enemies and the brawler polish): **195 PASS / 0 FAIL**.
+The bot sets `Application.runInBackground = true` at start (runtime only): without it the editor stalls the play loop as soon as its window is not in
+front (the Claude app on top), which looks like a hung run (frame counter stuck, no `[PLAYTEST]` lines) and probably explains the old "editor stall" notes.
+Script compilation also stalls while the editor window is not in front ("COMPILATION_IN_PROGRESS" from every RunCommand, no progress in the log): bring Unity to the
+front (PowerShell `(New-Object -ComObject WScript.Shell).AppActivate(<Unity pid>)`) and it finishes at once.
+A run only compiles if the scripts compile: a `RunCommand` that reports "compiled" may be using the OLD assembly - after editing scripts call
+`AssetDatabase.Refresh()` and check `Unity_GetConsoleLogs` for errors before starting a run. `HK_ONLY=brawlershots` writes PNG frames of a brawler hit.
 The bot switches the mantle OFF for every group except `mantle` / `mantleshots` (it would pull the hero onto the scene's platforms and wall tops
 and change what the old wall/ledge scenarios measure) and restores it in `Finish()`. `HK_ONLY=mantleshots` writes PNGs of the pull-up. The old scenarios (run, jump, double jump, dash, wall slide/jump, combat, float,
 hard landing, camera - all had passed repeatedly) are kept, not deleted, behind `HK_ONLY="legacy"`; `HK_ONLY="all"` runs both (~7 min).
