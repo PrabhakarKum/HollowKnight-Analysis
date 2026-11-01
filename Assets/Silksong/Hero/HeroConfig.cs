@@ -52,6 +52,19 @@ namespace Hollowknight.Silksong
         // PROVISIONAL: best-guess match (BOUNCE_VELOCITY); not confirmed as the pogo bounce.
         public float PogoBounceSpeed = 12f;
 
+        // Added in the attack task: the config had no hitbox sizes or damage. Boxes are centred on the hero's
+        // position; the x offset of the sideways box is mirrored with the facing side. PROVISIONAL: the
+        // original uses polygon colliders on the slash prefabs, so these are the owner's hand-tuned prototype
+        // boxes (PlayerTuning.asset) and must not be changed without the owner.
+        public Vector2 AttackSideSize = new Vector2(1.1f, 1.2f);
+        public Vector2 AttackSideOffset = new Vector2(0.8f, 0.15f);
+        public Vector2 AttackUpSize = new Vector2(1.4f, 0.8f);
+        public Vector2 AttackUpOffset = new Vector2(0f, 1.15f);
+        public Vector2 AttackDownSize = new Vector2(1.4f, 0.5f);
+        public Vector2 AttackDownOffset = new Vector2(0f, 0f);
+        // PROVISIONAL: the original's damage grows with needle upgrades; 1 is the prototype's nailDamage.
+        public int AttackDamage = 1;
+
         [Header("Hurt (unused until the damage task)")]
         public float HurtInvulnerableSeconds = 1f;
         // PROVISIONAL: RECOIL_VELOCITY is a guess for the damage recoil speed; not confirmed.

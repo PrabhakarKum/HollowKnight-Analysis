@@ -204,7 +204,7 @@ plus `RunSpeed` 8.25, `JumpHoldMaxSeconds` 0.18, `JumpHoldMinSeconds` 0.04 and `
 | 19 | Dash into a wall | ends the dash and starts a slide | the dash step starts a slide if possible | not built, stub `Hero dash ends at wall` (the dash runs its full time first, then the cling can start) | same, deferred |
 | 20 | Dash direction when latched | away from the wall | not read | held direction, else facing (which faces the wall) | DIFFERENT, **PROVISIONAL** |
 | 21 | Air jumps given back | on slide and wall jump | double jump flag cleared | no double jump built | n/a |
-| 22 | Attack while latched | a forward slash halves the slide speed (cap 5); an up slash pushes the hero off by 0.8 | an attack cancels the slide | not built; attacks are Task 9 | DIFFERENT, deferred |
+| 22 | Attack while latched | a forward slash halves the slide speed (cap 5); an up slash pushes the hero off by 0.8 | a sideways swing halves the slide speed once (cap -5); up pushes off 0.8 and cancels the slide; down cancels it | built in Task 9: same as Silksong (see `05-combat.md` rows 29 to 31) | DIFFERENT from the prototype |
 | 23 | Wall cling tool | none | separate state needing an equipped tool, decelerates at 80, 0.3 s cooldown | not built (no tool system) | DIFFERENT, deferred |
 | 24 | Surfaces that refuse a latch | none | non-slider surfaces and no-cling regions refuse it | not built (all solid walls count) | DIFFERENT, deferred |
 | 25 | Ability unlock | none | wall jump needs `hasWalljump` | not built (always on) | DIFFERENT, deferred |
@@ -225,5 +225,5 @@ Time base: every new-hero timer is seconds reduced by the step length, so 50 and
 Each logs once through `Stubs.NotImplemented`: `Hero wall stick delay` (row 2), `Hero wall slide acceleration`
 (row 3), `Hero wall jump chain` (row 10), `Hero wall jump short lock` (row 15), `Hero dash ends at wall` (row 19).
 The earlier dash stub `Hero dash wall refresh` is gone: the refresh is real now. Still unbuilt without a stub because
-they need systems that do not exist yet: attack interaction (row 22, Task 9), wall cling tool (row 23), non-slider
+they need systems that do not exist yet: wall cling tool (row 23), non-slider
 surfaces (row 24), the ability unlock (row 25).

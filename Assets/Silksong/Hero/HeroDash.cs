@@ -39,8 +39,14 @@ namespace Hollowknight.Silksong
         // does both). Called by HeroWall.
         internal void RefreshAirDash()
         {
-            airDashUsed = false;
+            ResetAirDashAllowance();
             cooldownRemaining = 0f;
+        }
+
+        // Gives the air dash back but leaves the cooldown alone (the pogo bounce does exactly this).
+        internal void ResetAirDashAllowance()
+        {
+            airDashUsed = false;
         }
 
         internal void Bind(HeroController controller)

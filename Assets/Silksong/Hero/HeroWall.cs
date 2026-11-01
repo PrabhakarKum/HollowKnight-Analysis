@@ -96,7 +96,8 @@ namespace Hollowknight.Silksong
             bool wantsToward = touchingSide > 0 ? owner.WantsRight : (touchingSide < 0 && owner.WantsLeft);
 
             if (!clinging && touchingSide != 0 && wantsToward && !owner.IsGrounded
-                && vel.y <= RestingVelocityY && !riseActive)
+                && vel.y <= RestingVelocityY && !riseActive
+                && !(owner.Attack != null && owner.Attack.BlocksWallCling))
             {
                 BeginCling();
             }
@@ -166,6 +167,15 @@ namespace Hollowknight.Silksong
             ProbeWall();
             int dir = owner.FacingRight ? 1 : -1;
             if (touchingSide == dir) Stubs.NotImplemented("Hero dash ends at wall");
+        }
+
+        // An up or down swing while clinging lets go of the wall (the original's attack-cancels-slide rule) and
+        // faces away from it like any other let-go. HeroAttack keeps the cling from restarting during that swing.
+        internal void CancelClingForAttack()
+        {
+            if (!clinging) return;
+            EndCling();
+            unstickTime = 0f;
         }
 
         void BeginCling()
