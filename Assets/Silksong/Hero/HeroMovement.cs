@@ -9,8 +9,6 @@ namespace Hollowknight.Silksong
     {
         // Comparisons on accumulated float seconds need a little slack to not depend on rounding.
         const float TimeEpsilon = 1e-4f;
-        // How far below the feet counts as standing on something.
-        const float GroundProbeDistance = 0.05f;
         // Floor normals steeper than this (as a minimum y) are walls, not floors.
         const float MinFloorNormalY = 0.7f;
         // Tolerance for "not moving upward" so resting contact jitter still counts as grounded.
@@ -20,10 +18,23 @@ namespace Hollowknight.Silksong
         readonly RaycastHit2D[] hits = new RaycastHit2D[8];
 
         bool wasGrounded;
+        // Landing is only reported after having been in the air, so spawning on the floor is silent.
+        bool everAirborne;
         bool jumping;
         float jumpElapsed;
-        float coyoteTimer;
-        float bufferTimer;
+
+        // Seconds since the hero left the floor (0 on the step it left); a ledge jump is allowed while
+        // this is within CoyoteSeconds, inclusive.
+        float airTime;
+        bool coyoteArmed;
+
+        // Seconds since an unspent jump press was seen (0 on the step of the press), usable while
+        // within JumpBufferSeconds, inclusive.
+        bool bufferArmed;
+        float bufferAge;
+        // A press and release inside one fixed step is a tap: it must still jump even though the
+        // button is already up when the jump becomes possible.
+        bool bufferSurvivesRelease;
 
         public HeroMovement(HeroController owner)
         {
@@ -41,36 +52,48 @@ namespace Hollowknight.Silksong
 
             bool grounded = ProbeGround() && vel.y <= RestingVelocityY && !jumping;
 
-            // Timers: the press that sets the buffer in this step must keep its full length, so the
-            // decrement happens before it.
-            coyoteTimer = Mathf.Max(0f, coyoteTimer - dt);
-            bufferTimer = Mathf.Max(0f, bufferTimer - dt);
-            if (input.Jump.WasPressed) bufferTimer = cfg.JumpBufferSeconds;
-            // Like the original, a queued jump is dropped if the button is let go before it fires.
-            if (!input.Jump.IsPressed) bufferTimer = 0f;
+            if (input.Jump.WasPressed)
+            {
+                bufferArmed = true;
+                bufferAge = 0f;
+                bufferSurvivesRelease = input.Jump.WasReleased;
+            }
+            else if (bufferArmed)
+            {
+                bufferAge += dt;
+                // Like the original, a queued jump is dropped if the button is let go in a later step.
+                if (!input.Jump.IsPressed && !bufferSurvivesRelease) bufferArmed = false;
+                if (bufferAge > cfg.JumpBufferSeconds + TimeEpsilon) bufferArmed = false;
+            }
 
             if (grounded)
             {
-                coyoteTimer = cfg.CoyoteSeconds;
-                if (!wasGrounded) owner.RaiseLanded();
+                airTime = 0f;
+                coyoteArmed = true;
+                if (!wasGrounded && everAirborne) owner.RaiseLanded();
+            }
+            else
+            {
+                everAirborne = true;
+                if (wasGrounded) airTime = 0f; else airTime += dt;
             }
 
-            if (bufferTimer > TimeEpsilon && (grounded || coyoteTimer > TimeEpsilon))
+            bool coyoteOk = coyoteArmed && airTime <= cfg.CoyoteSeconds + TimeEpsilon;
+            if (bufferArmed && (grounded || coyoteOk))
             {
                 jumping = true;
                 jumpElapsed = 0f;
-                bufferTimer = 0f;
-                coyoteTimer = 0f;
+                bufferArmed = false;
+                bufferSurvivesRelease = false;
+                coyoteArmed = false;
                 grounded = false;
             }
 
             if (jumping) vel = SustainJump(vel, cfg, input.Jump.IsPressed, dt);
 
-            if (!jumping)
-            {
-                if (grounded) vel.y = 0f;
-                else vel.y = Mathf.Max(vel.y - cfg.Gravity * dt, -cfg.FallSpeedMax);
-            }
+            // Gravity also acts while standing: the contact stops the body, and only a real contact may
+            // cancel the fall, so a falling hero cannot hover above the floor.
+            if (!jumping) vel.y = Mathf.Max(vel.y - cfg.Gravity * dt, -cfg.FallSpeedMax);
 
             // Run is digital like the original: a tilted stick past the threshold is full speed.
             int dir = (owner.WantsRight ? 1 : 0) - (owner.WantsLeft ? 1 : 0);
@@ -124,6 +147,8 @@ namespace Hollowknight.Silksong
             owner.WantsDown = move.y < -cfg.VerticalPressThreshold;
         }
 
+        // The probe reaches no further than twice the collider skin, so "grounded" means touching, not
+        // merely close.
         bool ProbeGround()
         {
             var filter = new ContactFilter2D
@@ -132,7 +157,7 @@ namespace Hollowknight.Silksong
                 layerMask = owner.GroundLayers,
                 useTriggers = false
             };
-            int count = owner.BodyCollider.Cast(Vector2.down, filter, hits, GroundProbeDistance);
+            int count = owner.BodyCollider.Cast(Vector2.down, filter, hits, Physics2D.defaultContactOffset * 2f);
             for (int i = 0; i < count; i++)
                 if (hits[i].normal.y >= MinFloorNormalY) return true;
             return false;

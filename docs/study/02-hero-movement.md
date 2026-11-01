@@ -31,10 +31,18 @@ original also keeps a very short queue for the release itself, which this projec
 the button level.
 
 **Coyote time.** After walking off a ledge the hero may still start a ground jump for 4 steps (0.08 s). The grace
+is cleared the moment a jump starts, and is not granted when the hero left the ground by jumping. In this project the
+window is inclusive: a jump is allowed while the time since leaving the floor (0 on the step it left) is at most
+CoyoteSeconds, so 0.08 s allows five steps at 50 Hz. I did not trace the original counter order, so it may allow one
+step fewer; the window equals the config value by definition.
 is cleared the moment a jump starts, and is not granted when the hero left the ground by jumping.
 
 **Jump buffering.** A jump press that cannot act yet is remembered for 2 steps (0.04 s) and fires when the hero
-can jump. The memory is dropped if the button is released before it fires.
+can jump. The memory is dropped if the button is released in a later step than the press; a press and release inside
+one fixed step still counts (a tap), and then holds the jump for the minimum time. The window is inclusive: age 0 is
+the press step, usable while the age is at most JumpBufferSeconds (three steps at 50 Hz). The original tests its
+queue counter with a less-or-equal against 2, which is the same inclusive counting; for coyote I did not trace the
+counter order, so it may differ by one step.
 
 **Gravity and fall cap.** The hero's body uses the engine's gravity. The project gravity is 60 downward and the
 hero's gravity scale is 1, so the effective pull is 60 units per second squared. Falling speed is clamped to a
@@ -63,13 +71,13 @@ double jump, used by other abilities; neither is built here.
 | DashCooldownSeconds | 0.425 | Hero prefab, `DASH_COOLDOWN` |
 | WallSlideSpeed | 6 | **PROVISIONAL.** The original has no fixed slide speed: it adds an acceleration (Hero prefab `WALLSLIDE_ACCEL` = -24 per second) after a 0.15 s stick time. A fixed speed is a design choice for the wall task |
 | WallJumpSpeedX | 25 | Hero prefab, `WJ_KICKOFF_SPEED` (starts at this and decays toward run speed over the lock) |
-| WallJumpSpeedY | 18.6 | Same as the jump speed; the original's wall jump starts a normal jump. Taken from `JUMP_SPEED`, behaviour to confirm in the wall task |
+| WallJumpSpeedY | 18.6 | **PROVISIONAL.** Assumed equal to the jump speed (`JUMP_SPEED`); the original wall jump was not traced to confirm it |
 | WallJumpLockSeconds | 0.3 | Derived: Hero prefab `WJLOCK_STEPS_LONG` = 15 (short lock is 5 steps = 0.1 s) |
 | AttackActiveSeconds | 0.35 | `Default.asset`, `attackDuration` |
 | AttackCooldownSeconds | 0.41 | `Default.asset`, `attackCooldownTime` |
-| PogoBounceSpeed | 12 | Hero prefab, `BOUNCE_VELOCITY`; best match for the bounce after a hit, to confirm in the attack task (down-spike rebound speed is 20 sideways) |
+| PogoBounceSpeed | 12 | **PROVISIONAL.** Best-guess match to Hero prefab `BOUNCE_VELOCITY`; not confirmed to be the pogo bounce (down-spike rebound speed 20 is sideways) |
 | HurtInvulnerableSeconds | 1 | Hero prefab, `INVUL_TIME` |
-| HurtKnockbackX | 15 | Hero prefab, `RECOIL_VELOCITY` (damage recoil speed) |
+| HurtKnockbackX | 15 | **PROVISIONAL.** Guess that Hero prefab `RECOIL_VELOCITY` is the damage recoil speed; not confirmed |
 | HurtKnockbackY | 0 | **PROVISIONAL.** No separate vertical damage knockback value found; the original recoil is horizontal |
 | HurtStunSeconds | 0.2 | Hero prefab, `RECOIL_DURATION` |
 
@@ -77,8 +85,11 @@ Dash, wall, attack and hurt fields are declared now and unused until their tasks
 
 ## PROVISIONAL values (owner to confirm)
 
-1. WallSlideSpeed = 6 (see above).
-2. HurtKnockbackY = 0 (see above).
+1. WallSlideSpeed = 6.
+2. HurtKnockbackY = 0.
+3. WallJumpSpeedY = 18.6 (assumed equal to jump speed).
+4. PogoBounceSpeed = 12 (guessed mapping).
+5. HurtKnockbackX = 15 (guessed mapping).
 
 ## Deliberate deviations
 

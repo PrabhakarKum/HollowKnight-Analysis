@@ -41,11 +41,15 @@ namespace Hollowknight.Silksong
         public bool WantsUp { get; internal set; }
         public bool WantsDown { get; internal set; }
 
+        // Tests set this and drive StepFixed themselves so they control exactly how many steps run.
+        public bool ManualStepping { get; set; }
+
         public event Action Landed;
 
         Rigidbody2D body;
         Collider2D bodyCollider;
         HeroMovement movement;
+        PhysicsMaterial2D runtimeMaterial;
 
         internal Rigidbody2D Body => body;
         internal Collider2D BodyCollider => bodyCollider;
@@ -69,8 +73,8 @@ namespace Hollowknight.Silksong
             // movement code sets velocity directly.
             if (bodyCollider.sharedMaterial == null)
             {
-                var slippery = new PhysicsMaterial2D("HeroNoFriction") { friction = 0f, bounciness = 0f };
-                bodyCollider.sharedMaterial = slippery;
+                runtimeMaterial = new PhysicsMaterial2D("HeroNoFriction") { friction = 0f, bounciness = 0f };
+                bodyCollider.sharedMaterial = runtimeMaterial;
             }
 
             movement = new HeroMovement(this);
@@ -78,12 +82,23 @@ namespace Hollowknight.Silksong
 
         void FixedUpdate()
         {
+            if (!ManualStepping) StepFixed(Time.fixedDeltaTime);
+        }
+
+        // Exactly what one FixedUpdate does. Public so tests can run a known number of steps.
+        public void StepFixed(float dt)
+        {
             if (Input == null || Config == null) return;
-            movement.FixedStep(Time.fixedDeltaTime);
+            movement.FixedStep(dt);
 
             // Dash and attack arrive in later tasks; flag the press so the gap is visible.
             if (Input.Dash.WasPressed) Stubs.NotImplemented("Hero dash");
             if (Input.Attack.WasPressed) Stubs.NotImplemented("Hero attack");
+        }
+
+        void OnDestroy()
+        {
+            if (runtimeMaterial != null) Destroy(runtimeMaterial);
         }
     }
 }

@@ -40,16 +40,19 @@ namespace Hollowknight.Silksong
         // PROVISIONAL: the original accelerates down the wall at 24 u/s^2 rather than using a fixed speed.
         public float WallSlideSpeed = 6f;
         public float WallJumpSpeedX = 25f;
+        // PROVISIONAL: assumed equal to JumpSpeed; the wall jump was not traced in the original.
         public float WallJumpSpeedY = 18.6f;
         public float WallJumpLockSeconds = 0.3f;
 
         [Header("Attack (unused until the attack task)")]
         public float AttackActiveSeconds = 0.35f;
         public float AttackCooldownSeconds = 0.41f;
+        // PROVISIONAL: best-guess match (BOUNCE_VELOCITY); not confirmed as the pogo bounce.
         public float PogoBounceSpeed = 12f;
 
         [Header("Hurt (unused until the damage task)")]
         public float HurtInvulnerableSeconds = 1f;
+        // PROVISIONAL: RECOIL_VELOCITY is a guess for the damage recoil speed; not confirmed.
         public float HurtKnockbackX = 15f;
         // PROVISIONAL: no vertical knockback value was found.
         public float HurtKnockbackY = 0f;
