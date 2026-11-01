@@ -12,13 +12,22 @@ using UnityEngine.SceneManagement;
 
 namespace Hollowknight.Silksong.Tests
 {
-    // Task 11. The camera test runs now with a hero built from code. The three scene and asset tests are written
-    // against what Task 11b produces (the imported hero animations and Assets/Scenes/SilksongHero.unity) and are
-    // ignored until then; their assertions are final, so 11b only has to remove the [Ignore] lines.
+    // Task 11 and 11b. The camera test uses a hero built from code. The scene and animation tests need the imported
+    // hero animations (menu Silksong/Import Hero Animations, run once). HeroSceneBuilder generates the scene; the
+    // prebuild step builds it before the run when the file is absent (scene building needs edit mode).
+    [PrebuildSetup(typeof(BuildHeroSceneIfAbsent))]
     public class RoomSceneTests
     {
-        // 11b builds the real room scene here (HeroTestSceneBuilder.DefaultScenePath is the same path).
-        public const string ScenePath = "Assets/Scenes/SilksongHero.unity";
+        // Same string as HeroSceneBuilder.ScenePath (an EditMode test checks they agree). Not SilksongHero.unity: that path is the
+        // committed placeholder-art scene from HeroTestSceneBuilder.
+        public const string ScenePath = "Assets/Scenes/SilksongHeroRoom.unity";
+
+        static void RequireScene()
+        {
+#if UNITY_EDITOR
+            Assert.IsTrue(File.Exists(ScenePath), ScenePath + " does not exist and could not be built. Hero animations are probably not imported: run the menu Silksong/Import Hero Animations, then Silksong/Build Hero Scene, then rerun.");
+#endif
+        }
 
         readonly List<Object> spawned = new List<Object>();
         SimulationMode2D savedMode;
@@ -132,10 +141,10 @@ namespace Hollowknight.Silksong.Tests
         // ---------- 2. scene (11b) ----------
 
         [UnityTest]
-        [Ignore("Task 11b: needs imported assets and scene")]
         public IEnumerator SilksongHeroScene_Loads_WithNoMissingScripts()
         {
 #if UNITY_EDITOR
+            RequireScene();
             yield return EditorSceneManager.LoadSceneAsyncInPlayMode(ScenePath, new LoadSceneParameters(LoadSceneMode.Single));
             yield return null;
             var scene = SceneManager.GetActiveScene();
@@ -163,10 +172,10 @@ namespace Hollowknight.Silksong.Tests
         }
 
         [UnityTest]
-        [Ignore("Task 11b: needs imported assets and scene")]
         public IEnumerator Hero_SpawnsAtRespawnMarker()
         {
 #if UNITY_EDITOR
+            RequireScene();
             yield return EditorSceneManager.LoadSceneAsyncInPlayMode(ScenePath, new LoadSceneParameters(LoadSceneMode.Single));
             yield return null;
 
@@ -185,10 +194,42 @@ namespace Hollowknight.Silksong.Tests
 #endif
         }
 
+        [UnityTest]
+        public IEnumerator SilksongHeroScene_HeroUsesOnlyProjectHeroConfig_AndSilksongBody()
+        {
+#if UNITY_EDITOR
+            RequireScene();
+            yield return EditorSceneManager.LoadSceneAsyncInPlayMode(ScenePath, new LoadSceneParameters(LoadSceneMode.Single));
+            yield return null;
+
+            // Every hero's Config is the project asset itself, with no copy anywhere in the scene.
+            HeroConfigConsistency.AssertSceneUsesProjectConfig();
+            var hero = Object.FindFirstObjectByType<HeroController>();
+            Assert.IsNotNull(hero);
+            Assert.AreSame(HeroConfigConsistency.LoadProjectAsset(), hero.Config);
+            Assert.IsNotNull(hero.Input, "input is injected by the bootstrap");
+            Assert.IsNotNull(hero.Animator, "animator is injected by the bootstrap");
+
+            // The body is the original's box, not the old 0.8 x 1.8 capsule.
+            Assert.IsNull(hero.GetComponent<CapsuleCollider2D>());
+            var box = hero.GetComponent<BoxCollider2D>();
+            Assert.IsNotNull(box);
+            Assert.AreEqual(SilksongUnits.HeroColliderSize.x, box.size.x, 1e-4f);
+            Assert.AreEqual(SilksongUnits.HeroColliderSize.y, box.size.y, 1e-4f);
+            Assert.AreEqual(SilksongUnits.HeroColliderOffset.y, box.offset.y, 1e-4f);
+            Assert.AreEqual(1f, hero.transform.lossyScale.x, 1e-6f);
+
+            Assert.IsNotNull(Object.FindFirstObjectByType<TrainingDummy>(), "scene has a training dummy");
+            Assert.IsNotNull(Object.FindFirstObjectByType<GameCamera>(), "scene has the game camera");
+            Assert.IsNotNull(Object.FindFirstObjectByType<RoomBounds>(), "scene has room bounds");
+#else
+            yield break;
+#endif
+        }
+
         // ---------- 3. animations (11b) ----------
 
         [UnityTest]
-        [Ignore("Task 11b: needs imported assets and scene")]
         public IEnumerator HeroAnimations_AllNeededClipsPresent_ForRunJumpDashWallAttackHurtDeath()
         {
 #if UNITY_EDITOR
@@ -274,5 +315,23 @@ namespace Hollowknight.Silksong.Tests
 #if UNITY_EDITOR
         static AnimationClip Clip(List<AnimationClip> clips, string name) => clips.Find(c => c.name == name);
 #endif
+    }
+
+    // Runs in edit mode before the play-mode run. Builds the scene when absent; if the art is not imported it only logs
+    // (the tests then fail with the instruction to import first).
+    public class BuildHeroSceneIfAbsent : IPrebuildSetup
+    {
+        public void Setup()
+        {
+#if UNITY_EDITOR
+            var type = System.Type.GetType("Hollowknight.Silksong.Editor.HeroSceneBuilder, Hollowknight.Silksong.Editor");
+            if (type == null) { Debug.LogWarning("[RoomSceneTests] HeroSceneBuilder not found."); return; }
+            try { type.GetMethod("EnsureBuilt").Invoke(null, null); }
+            catch (System.Reflection.TargetInvocationException e)
+            {
+                Debug.LogWarning("[RoomSceneTests] Could not build the hero scene: " + e.InnerException?.Message);
+            }
+#endif
+        }
     }
 }
