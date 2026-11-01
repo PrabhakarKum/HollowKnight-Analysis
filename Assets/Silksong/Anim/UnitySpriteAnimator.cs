@@ -22,8 +22,8 @@ namespace Hollowknight.Silksong
         readonly Dictionary<string, AnimationClip> clipsByName = new Dictionary<string, AnimationClip>();
         // Read once at Register time so playback never depends on re-querying clip settings.
         readonly Dictionary<string, bool> loopByName = new Dictionary<string, bool>();
-        // Frames whose start-frame event we fired by hand; swallows Unity's own dispatch of the
-        // same event so a listener never sees it twice. Cleared at the next Update.
+        // Frames whose start-frame event we fired by hand. Unity may dispatch its own copy of that
+        // event in the first step after the start; OnFrameEvent swallows it once. Cleared after that step.
         readonly HashSet<int> manualFired = new HashSet<int>();
 
         bool initialised;
@@ -34,6 +34,8 @@ namespace Hollowknight.Silksong
         AnimationClip current;
         bool currentLoops;
         bool finished;
+        // True only inside the seek Evaluate(0); anything Unity dispatches then is covered by our hand-fired events.
+        bool seeking;
 
         public event Action<string> Completed;
         public event Action<string, int> FrameEvent;
@@ -47,7 +49,7 @@ namespace Hollowknight.Silksong
             if (initialised) return;
             initialised = true;
             animator = GetComponent<Animator>();
-            foreach (var c in clips) Register(c);
+            foreach (var c in clips) if (c != null && !clipsByName.ContainsKey(c.name)) Register(c); // runtime-registered clips win
 
             graph = PlayableGraph.Create("UnitySpriteAnimator");
             LiveGraphCount++;
@@ -113,7 +115,9 @@ namespace Hollowknight.Silksong
             manualFired.Clear();
 
             playable.SetTime(frame / rate);
+            seeking = true;
             graph.Evaluate(0f);
+            seeking = false;
 
             // A zero-length step does not reliably dispatch events sitting exactly on the start
             // time, so fire those ourselves. Rule: events on the start frame fire, earlier ones don't.
@@ -128,11 +132,12 @@ namespace Hollowknight.Silksong
 
         void Update()
         {
-            manualFired.Clear();
             if (current == null || finished || !graph.IsValid()) return;
 
             // Step normally first so events between the old time and the end still fire.
             graph.Evaluate(Time.deltaTime);
+            // Only the first step after a start can carry Unity's copy of a start-frame event.
+            manualFired.Clear();
             if (!currentLoops && playable.GetTime() >= current.length)
             {
                 finished = true;
@@ -145,7 +150,7 @@ namespace Hollowknight.Silksong
         // Animator's GameObject, which is why this lives on the same object as the Animator.
         public void OnFrameEvent(AnimationEvent e)
         {
-            if (current == null) return;
+            if (current == null || seeking) return;
             if (manualFired.Remove(e.intParameter)) return;
             FrameEvent?.Invoke(current.name, e.intParameter);
         }

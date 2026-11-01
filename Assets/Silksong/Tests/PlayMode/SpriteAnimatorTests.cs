@@ -233,6 +233,22 @@ namespace Hollowknight.Silksong.Tests
             CollectionAssert.AreEqual(new[] { 2 }, frames);
         }
 
+        [UnityTest]
+        public IEnumerator EventOnStartFrame_FiresOnceAcrossFirstTwoUpdates()
+        {
+            anim.Register(MakeClip("S2", loop: false, 2));
+            var frames = new List<int>();
+            anim.FrameEvent += (c, f) => frames.Add(f);
+
+            anim.PlayFromFrame("S2", 2);
+            yield return null;
+            yield return null;
+            CollectionAssert.AreEqual(new[] { 2 }, frames);
+
+            yield return WaitSeconds(0.3f);
+            CollectionAssert.AreEqual(new[] { 2 }, frames);
+        }
+
         [Test]
         public void Play_BeforeAwake_StillWorks()
         {
