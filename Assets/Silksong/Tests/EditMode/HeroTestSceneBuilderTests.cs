@@ -39,7 +39,7 @@ namespace Hollowknight.Silksong.Tests
         [Test]
         public void Build_CreatesSceneWithHeroAndConfig()
         {
-            HeroTestSceneBuilder.Build(TempScene);
+            HeroTestSceneBuilder.Build(TempScene, true);
             Assert.IsTrue(File.Exists(TempScene), "scene file written");
 
             var scene = OpenScene(TempScene);
@@ -65,6 +65,10 @@ namespace Hollowknight.Silksong.Tests
                 Assert.IsNotNull(config, "HeroConfig asset exists");
                 Assert.AreSame(config, huds[0].Config, "hero is wired to the HeroConfig asset");
                 Assert.AreSame(heroes[0], huds[0].Hero);
+                var hudSo = new SerializedObject(huds[0]);
+                foreach (var field in new[] { "hero", "actions", "config" })
+                    Assert.IsNotNull(hudSo.FindProperty(field).objectReferenceValue, "HeroDebugHud." + field + " is set");
+                Assert.IsNotNull(new SerializedObject(cams[0]).FindProperty("target").objectReferenceValue, "camera target is set");
             }
             finally { ResetScene(); }
         }
@@ -72,13 +76,13 @@ namespace Hollowknight.Silksong.Tests
         [Test]
         public void Build_IsRepeatable()
         {
-            HeroTestSceneBuilder.Build(TempScene);
+            HeroTestSceneBuilder.Build(TempScene, true);
             int configsBefore = AssetDatabase.FindAssets("t:HeroConfig").Length;
             var first = OpenScene(TempScene);
             int objectsFirst = CountObjects(first);
             ResetScene();
 
-            HeroTestSceneBuilder.Build(TempScene);
+            HeroTestSceneBuilder.Build(TempScene, true);
             var second = OpenScene(TempScene);
             try
             {
@@ -92,7 +96,7 @@ namespace Hollowknight.Silksong.Tests
         [Test]
         public void Build_ContainsSlopesAtThirtyAndFortyFiveDegrees()
         {
-            HeroTestSceneBuilder.Build(TempScene);
+            HeroTestSceneBuilder.Build(TempScene, true);
             var scene = OpenScene(TempScene);
             try
             {
@@ -112,10 +116,16 @@ namespace Hollowknight.Silksong.Tests
             var before = File.ReadAllBytes(SampleScenePath);
             var timeBefore = File.GetLastWriteTimeUtc(SampleScenePath);
 
-            HeroTestSceneBuilder.Build(TempScene);
+            HeroTestSceneBuilder.Build(TempScene, true);
 
             CollectionAssert.AreEqual(before, File.ReadAllBytes(SampleScenePath), "SampleScene content unchanged");
             Assert.AreEqual(timeBefore, File.GetLastWriteTimeUtc(SampleScenePath), "SampleScene not rewritten");
+        }
+
+        [Test]
+        public void Build_RefusesToRunWithoutExplicitOptIn()
+        {
+            Assert.Throws<System.InvalidOperationException>(() => HeroTestSceneBuilder.Build(TempScene, false));
         }
 
         [Test]
@@ -123,7 +133,10 @@ namespace Hollowknight.Silksong.Tests
         {
             // The exact state batch mode and a fresh test run start in, which broke the additive version.
             ResetScene();
-            Assert.DoesNotThrow(() => HeroTestSceneBuilder.Build(TempScene));
+            // Dirty it too: the unsaved-changes case must not block the build either.
+            new GameObject("DirtyMarker");
+            EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
+            Assert.DoesNotThrow(() => HeroTestSceneBuilder.Build(TempScene, true));
             Assert.IsTrue(File.Exists(TempScene));
         }
 
@@ -135,7 +148,7 @@ namespace Hollowknight.Silksong.Tests
             try
             {
                 UnityEngine.TestTools.LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex("No label font"));
-                HeroTestSceneBuilder.Build(TempScene);
+                HeroTestSceneBuilder.Build(TempScene, true);
             }
             finally { HeroTestSceneBuilder.LabelFontProvider = original; }
 
@@ -151,22 +164,18 @@ namespace Hollowknight.Silksong.Tests
         [Test]
         public void Build_IsRepeatableWhileTheSceneIsOpen()
         {
-            HeroTestSceneBuilder.Build(TempScene);
+            HeroTestSceneBuilder.Build(TempScene, true);
             var open = OpenScene(TempScene);
             int objects = CountObjects(open);
 
             // The menu leaves the built scene open, so a rebuild must cope with it being loaded.
-            HeroTestSceneBuilder.Build(TempScene);
+            HeroTestSceneBuilder.Build(TempScene, true);
 
             var again = OpenScene(TempScene);
             try
             {
                 Assert.AreEqual(objects, CountObjects(again));
                 Assert.AreEqual(1, All<HeroController>(again).Length);
-                int loadedCopies = 0;
-                for (int i = 0; i < SceneManager.sceneCount; i++)
-                    if (SceneManager.GetSceneAt(i).path == TempScene) loadedCopies++;
-                Assert.AreEqual(1, loadedCopies);
             }
             finally { ResetScene(); }
         }

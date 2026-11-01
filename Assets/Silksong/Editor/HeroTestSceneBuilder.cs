@@ -34,7 +34,7 @@ namespace Hollowknight.Silksong.Editor
         public static void BuildFromMenu()
         {
             if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
-            Build();
+            Build(DefaultScenePath, true);
             EditorSceneManager.OpenScene(DefaultScenePath);
         }
 
@@ -43,7 +43,7 @@ namespace Hollowknight.Silksong.Editor
         {
             try
             {
-                string path = Build();
+                string path = Build(DefaultScenePath, true);
                 Debug.Log("[HeroTestSceneBuilder] Built " + path);
                 EditorApplication.Exit(0);
             }
@@ -56,21 +56,28 @@ namespace Hollowknight.Silksong.Editor
 
         // Builds into scenePath (overwriting it). The HeroConfig asset is shared and only created if
         // absent, so tests that build into a temp folder never produce a second config.
-        public static string Build(string scenePath = DefaultScenePath)
+        // discardOpenScenes must be true: the build replaces whatever scenes are open (Single-mode NewScene)
+        // without saving them, so the caller (menu after its save prompt, batch mode, tests) has to opt in.
+        public static string Build(string scenePath, bool discardOpenScenes)
         {
+            if (!discardOpenScenes)
+                throw new InvalidOperationException("Build replaces all open scenes without saving; pass discardOpenScenes: true to confirm.");
             EnsureFolder(Path.GetDirectoryName(scenePath).Replace('\\', '/'));
-            var config = EnsureConfig();
-            whiteSprite = EnsureSprite();
+            EnsureConfig();
+            EnsureSprite();
             labelFont = LabelFontProvider();
             if (labelFont == null) Debug.LogWarning("[HeroTestSceneBuilder] No label font available; building the scene without labels.");
-            var actionsAsset = AssetDatabase.LoadAssetAtPath<InputActionAsset>(InputActionsPath);
-            if (actionsAsset == null) throw new InvalidOperationException("Missing " + InputActionsPath);
-
             // Single, not Additive: batch mode and fresh test runs start with an untitled unsaved scene, and Unity
             // refuses an additive NewScene on top of it. Single also unloads a previously built copy of this
             // scene (the menu leaves it open), so saving over it is safe.
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+            try
             {
+                // Assets are (re)loaded only now: switching scenes can unload assets fetched earlier, and a
+                // stale object assigned through SerializedObject is saved as a null reference.
+                var config = Require<HeroConfig>(ConfigPath);
+                var actionsAsset = Require<InputActionAsset>(InputActionsPath);
+                whiteSprite = Require<Sprite>(SpritePath);
                 BuildWorld();
                 var hero = BuildHero(actionsAsset, out var actions);
                 BuildCamera(hero.transform);
@@ -78,13 +85,35 @@ namespace Hollowknight.Silksong.Editor
                 if (!EditorSceneManager.SaveScene(scene, scenePath))
                     throw new InvalidOperationException("Could not save " + scenePath);
             }
-            // Leave a clean untitled scene loaded so nothing holds the saved file open.
-            EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+            finally
+            {
+                // Always leave a clean untitled scene: nothing holds the saved file open, and a failed build
+                // does not leave a half-built dirty scene behind.
+                EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+            }
             AssetDatabase.Refresh();
             return scenePath;
         }
 
         // ---------- assets ----------
+
+        static T Require<T>(string path) where T : UnityEngine.Object
+        {
+            var asset = AssetDatabase.LoadAssetAtPath<T>(path);
+            if (asset == null) throw new InvalidOperationException("Required asset missing or not imported: " + path);
+            return asset;
+        }
+
+        static void SetReference(SerializedObject so, string property, UnityEngine.Object value)
+        {
+            if (value == null) throw new InvalidOperationException("Cannot assign null to " + so.targetObject.GetType().Name + "." + property);
+            var prop = so.FindProperty(property);
+            if (prop == null) throw new InvalidOperationException("Missing serialized field " + property);
+            prop.objectReferenceValue = value;
+            so.ApplyModifiedPropertiesWithoutUndo();
+            if (prop.objectReferenceValue == null)
+                throw new InvalidOperationException(so.targetObject.GetType().Name + "." + property + " did not keep its reference");
+        }
 
         static Font ResolveLabelFont()
         {
@@ -112,6 +141,8 @@ namespace Hollowknight.Silksong.Editor
             var config = ScriptableObject.CreateInstance<HeroConfig>();
             AssetDatabase.CreateAsset(config, ConfigPath);
             AssetDatabase.SaveAssets();
+            // Import now so the asset can be loaded as a real project asset right away.
+            AssetDatabase.ImportAsset(ConfigPath, ImportAssetOptions.ForceSynchronousImport);
             return config;
         }
 
@@ -279,8 +310,7 @@ namespace Hollowknight.Silksong.Editor
 
             // The actions asset field is private on purpose; SerializedObject sets it without a code change.
             var so = new SerializedObject(actions);
-            so.FindProperty("actionsAsset").objectReferenceValue = actionsAsset;
-            so.ApplyModifiedPropertiesWithoutUndo();
+            SetReference(so, "actionsAsset", actionsAsset);
 
             // The body sprite is a child so scaling it to the hero's size never scales the collider.
             var sr = Visual(go.transform, "Visual", go.transform.position, HeroSize, new Color(1f, 0.85f, 0.25f));
@@ -300,8 +330,7 @@ namespace Hollowknight.Silksong.Editor
             go.AddComponent<AudioListener>();
             var follow = go.AddComponent<HeroTestCameraFollow>();
             var so = new SerializedObject(follow);
-            so.FindProperty("target").objectReferenceValue = target;
-            so.ApplyModifiedPropertiesWithoutUndo();
+            SetReference(so, "target", target);
         }
 
         static void BuildHud(HeroController hero, HeroActions actions, HeroConfig config)
@@ -309,10 +338,9 @@ namespace Hollowknight.Silksong.Editor
             var go = new GameObject("HeroDebugHud");
             var hud = go.AddComponent<HeroDebugHud>();
             var so = new SerializedObject(hud);
-            so.FindProperty("hero").objectReferenceValue = hero;
-            so.FindProperty("actions").objectReferenceValue = actions;
-            so.FindProperty("config").objectReferenceValue = config;
-            so.ApplyModifiedPropertiesWithoutUndo();
+            SetReference(so, "hero", hero);
+            SetReference(so, "actions", actions);
+            SetReference(so, "config", config);
         }
     }
 }
