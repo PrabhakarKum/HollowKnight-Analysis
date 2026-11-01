@@ -103,8 +103,12 @@ URP only: the component has no image effects and needs none; the original camera
 - `GameCamera: detach / short-damp after hits and respawns, scene-transition positioning`
 - `GameCamera: screen shake and post effects (bloom, colour correction, noise) as URP volume`
 
-The animation converter's stubs are in `07-hero-animation-mapping.md`: `tk2d LoopSection chaining (intro clip, then the 'Loop' clip)` and `tk2d RandomFrame/RandomLoop wrap modes (played as a plain loop)`.
+The animation converter's only stub is the RandomFrame/RandomLoop wrap mode (see 07-hero-animation-mapping.md).
 
 ## Replaces
 
 `HeroTestCameraFollow` (the placeholder, still in `Hero/Testing`) is replaced by `GameCamera` when Task 11b builds the real scene. It was not edited or removed here.
+
+## Note for Task 11b
+
+`HeroController.Config` is not serialized and is only injected by `HeroDebugHud` in the scratch scene. The real scene needs a bootstrap that sets it from the one `HeroConfig.asset` (same reference). `HeroConfigConsistency.AssertSceneUsesProjectConfig` always hard-fails on a copy or a second config; value drift on measured fields hard-fails and on PROVISIONAL / owner-tuned fields only logs a warning.

@@ -384,7 +384,7 @@ namespace Hollowknight.Silksong.Tests
             CollectionAssert.AreEqual(new[] { 4, 5, 6 }, set.LoopPart.SourceFrames);
             Assert.AreEqual(1, set.LoopPart.Events.Count, "event on frame 5 is the second frame of the loop part");
             Assert.AreEqual(1, set.LoopPart.Events[0].FrameIndex);
-            Assert.IsNotNull(set.UnsupportedFeature);
+            Assert.IsNull(set.UnsupportedFeature);
         }
 
         [Test]
@@ -430,6 +430,26 @@ namespace Hollowknight.Silksong.Tests
             Assert.AreEqual(4, (int)Tk2dWrapMode.RandomFrame);
             Assert.AreEqual(5, (int)Tk2dWrapMode.RandomLoop);
             Assert.AreEqual(6, (int)Tk2dWrapMode.Single);
+        }
+
+        [Test]
+        public void FindClip_DuplicateNames_FirstInFileOrderWins()
+        {
+            var a = new Tk2dClip { Name = "Idle", Fps = 10f };
+            var b = new Tk2dClip { Name = "Run" };
+            var c = new Tk2dClip { Name = "Idle", Fps = 99f };
+            var list = new List<Tk2dClip> { a, b, c };
+            Assert.AreSame(a, Tk2dAnimationData.FindClip(list, "Idle"));
+            Assert.AreSame(b, Tk2dAnimationData.FindClip(list, "Run"));
+        }
+
+        [Test]
+        public void FindClip_MissingNameThrows_AndNoNameNeedsASingleClipLibrary()
+        {
+            var a = new Tk2dClip { Name = "A" };
+            Assert.Throws<KeyNotFoundException>(() => Tk2dAnimationData.FindClip(new List<Tk2dClip> { a }, "B"));
+            Assert.AreSame(a, Tk2dAnimationData.FindClip(new List<Tk2dClip> { a }, null));
+            Assert.Throws<System.ArgumentException>(() => Tk2dAnimationData.FindClip(new List<Tk2dClip> { a, a }, null));
         }
 
         // ---------- converter path syntax ----------

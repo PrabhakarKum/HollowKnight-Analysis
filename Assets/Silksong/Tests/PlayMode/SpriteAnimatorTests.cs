@@ -173,6 +173,54 @@ namespace Hollowknight.Silksong.Tests
         }
 
         [UnityTest]
+        public IEnumerator Play_RepeatedOnIntroWithLoopPart_DoesNotRestart()
+        {
+            anim.Register(MakeClip("Jump", loop: false));
+            anim.Register(MakeClip("Jump Loop", loop: true));
+            anim.Play("Jump");
+            yield return WaitSeconds(0.25f);
+            var before = sr.sprite;
+            Assert.AreNotSame(sprites[0], before, "test setup: playback has moved on from frame 0");
+            // Hero code calls Play every step; that must not send the intro back to frame 0.
+            for (int i = 0; i < 5; i++) anim.Play("Jump");
+            Assert.AreSame(before, sr.sprite);
+            Assert.IsTrue(anim.IsPlaying("Jump"));
+        }
+
+        [UnityTest]
+        public IEnumerator Intro_ChainsIntoLoopPart_WithoutRaisingCompleted_AndRepeatPlayStaysPut()
+        {
+            anim.Register(MakeClip("Jump", loop: false));
+            anim.Register(MakeClip("Jump Loop", loop: true));
+            var completed = new List<string>();
+            anim.Completed += c => completed.Add(c);
+            anim.Play("Jump");
+            yield return WaitSeconds(0.9f);   // intro is 0.4 s; the loop part keeps going
+            Assert.IsEmpty(completed, "Completed is not raised for an intro that chains");
+            Assert.IsTrue(anim.IsPlaying("Jump"), "still counts as Jump while the loop part runs");
+            Assert.IsTrue(anim.IsPlaying("Jump Loop"));
+            anim.Play("Jump");
+            Assert.IsTrue(anim.IsPlaying("Jump Loop"), "repeat Play does not drop back to the intro");
+            yield return WaitSeconds(0.9f);
+            Assert.IsEmpty(completed);
+        }
+
+        [UnityTest]
+        public IEnumerator Play_OtherClip_StillSwitchesAwayFromLoopPart()
+        {
+            anim.Register(MakeClip("Jump", loop: false));
+            anim.Register(MakeClip("Jump Loop", loop: true));
+            anim.Register(MakeClip("Run", loop: true));
+            anim.Play("Jump");
+            yield return WaitSeconds(0.6f);
+            anim.Play("Run");
+            Assert.IsTrue(anim.IsPlaying("Run"));
+            Assert.IsFalse(anim.IsPlaying("Jump"));
+            anim.Play("Jump");
+            Assert.IsTrue(anim.IsPlaying("Jump"), "a later Play(Jump) starts the intro again");
+        }
+
+        [UnityTest]
         public IEnumerator Play_FinishedNonLoopingClip_Restarts()
         {
             anim.Register(MakeClip("Once", loop: false));

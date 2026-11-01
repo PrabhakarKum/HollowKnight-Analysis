@@ -233,13 +233,7 @@ namespace Hollowknight.Silksong.Editor
 
         static Tk2dClip FindClip(Library library, string clipName)
         {
-            if (string.IsNullOrEmpty(clipName))
-            {
-                if (library.Clips.Count == 1) return library.Clips[0];
-                throw new ArgumentException("The library holds " + library.Clips.Count + " clips; name one with 'path#ClipName'");
-            }
-            foreach (var c in library.Clips) if (c.Name == clipName) return c;
-            throw new KeyNotFoundException("No clip named '" + clipName + "' in the library");
+            return Tk2dAnimationData.FindClip(library.Clips, clipName);
         }
 
         static string FindCollection(string libraryFile, string guid)

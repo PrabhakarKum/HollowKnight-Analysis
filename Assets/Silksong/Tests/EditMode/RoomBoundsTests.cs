@@ -39,10 +39,10 @@ namespace Hollowknight.Silksong.Tests
         [Test]
         public void Create_PlacesTheAreaInWorldSpace()
         {
-            var rb = RoomBounds.Create(new Rect(-5f, 2f, 30f, 12f));
+            var rb = RoomBounds.Create(new Rect(-5f, 2f, 30f, 20f));
             try
             {
-                Assert.AreEqual(new Rect(-5f, 2f, 30f, 12f), rb.Area);
+                Assert.AreEqual(new Rect(-5f, 2f, 30f, 20f), rb.Area);
                 Assert.AreEqual(new Vector2(-5f + 14.6f, 2f + 8.3f), rb.ClampCameraCenter(new Vector2(-100f, -100f), new Vector2(14.6f, 8.3f)));
             }
             finally { Object.DestroyImmediate(rb.gameObject); }

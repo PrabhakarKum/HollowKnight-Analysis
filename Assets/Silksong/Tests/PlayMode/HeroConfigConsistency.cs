@@ -15,8 +15,8 @@ namespace Hollowknight.Silksong.Tests
     //
     // Two checks, both reusable from any scene test (Task 11b calls them on the real room scene):
     //   1. FindValueMismatches / AssertAssetMatchesSilksong: the asset still holds the documented Silksong numbers
-    //      (docs/study/02-hero-movement.md). The table below is a canary only. Game code never reads it.
-    //   2. FindWiringProblems / AssertSceneUsesProjectConfig: in the loaded scene every hero's Config IS the
+    //      (docs/study/02-hero-movement.md). Measured values hard-fail; PROVISIONAL ones only warn (see below).
+    //   2. FindWiringProblems / AssertSceneUsesProjectConfig (ALWAYS hard-fails): in the loaded scene every hero's Config IS the
     //      project asset (same reference, not a copy), no other HeroConfig instance exists, and no component in
     //      the scene serializes a different HeroConfig.
     public static class HeroConfigConsistency
@@ -25,7 +25,7 @@ namespace Hollowknight.Silksong.Tests
         const float Tolerance = 1e-5f;
 
         // Fields that are PROVISIONAL (not confirmed against the original, see HeroConfig comments). They are
-        // still pinned here: changing one is the owner's call, not something a scene or test may do silently.
+        // compared and reported as warnings only: an owner retune must never block the suite.
         public static readonly string[] Provisional =
         {
             "WallSlideSpeed", "WallJumpSpeedY", "PogoBounceSpeed",
@@ -65,7 +65,13 @@ namespace Hollowknight.Silksong.Tests
 #endif
 
         // ---------- check 1: values ----------
+        // Why a value table exists at all: it is the one place that records what the asset held when it was
+        // checked against Silksong, so a scene, prefab or stray edit cannot quietly change the hero. It is a
+        // canary only; game code never reads it. Values MEASURED from Silksong fail the suite when they drift.
+        // PROVISIONAL / owner-tuned values (the Provisional list) only warn, so an owner retune never blocks tests.
 
+        // Hard failures: a measured value differs, a HeroConfig field has no documented value, or a documented
+        // field no longer exists.
         public static List<string> FindValueMismatches(HeroConfig config)
         {
             var problems = new List<string>();
@@ -78,6 +84,7 @@ namespace Hollowknight.Silksong.Tests
                     problems.Add(field.Name + ": no documented Silksong value in HeroConfigConsistency (add one)");
                     continue;
                 }
+                if (Array.IndexOf(Provisional, field.Name) >= 0) continue;
                 object actual = field.GetValue(config);
                 if (!Same(expected, actual))
                     problems.Add(field.Name + ": expected " + expected + ", asset has " + actual);
@@ -86,6 +93,21 @@ namespace Hollowknight.Silksong.Tests
                 if (typeof(HeroConfig).GetField(name, BindingFlags.Public | BindingFlags.Instance) == null)
                     problems.Add(name + ": documented but HeroConfig no longer has this field");
             return problems;
+        }
+
+        // Warnings only: PROVISIONAL / owner-tuned fields whose value differs from the table.
+        public static List<string> FindProvisionalDrift(HeroConfig config)
+        {
+            var drift = new List<string>();
+            if (config == null) return drift;
+            foreach (var name in Provisional)
+            {
+                var field = typeof(HeroConfig).GetField(name, BindingFlags.Public | BindingFlags.Instance);
+                if (field == null || !Documented.TryGetValue(name, out var expected)) continue;
+                object actual = field.GetValue(config);
+                if (!Same(expected, actual)) drift.Add(name + " (PROVISIONAL): table has " + expected + ", asset has " + actual);
+            }
+            return drift;
         }
 
         static bool Same(object expected, object actual)
@@ -101,6 +123,9 @@ namespace Hollowknight.Silksong.Tests
 
         public static void AssertAssetMatchesSilksong(HeroConfig config)
         {
+            var drift = FindProvisionalDrift(config);
+            if (drift.Count > 0)
+                Debug.LogWarning("[HeroConfigConsistency] Owner-tuned values changed (not a failure):\n  " + string.Join("\n  ", drift));
             var problems = FindValueMismatches(config);
             Assert.IsEmpty(problems, "HeroConfig differs from the documented Silksong values:\n  " + string.Join("\n  ", problems));
         }

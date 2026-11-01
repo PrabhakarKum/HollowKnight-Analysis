@@ -178,7 +178,7 @@ namespace Hollowknight.Silksong.Tests
 
             // The hero root starts at the marker (RespawnAt places the root there), before gravity has moved it far.
             Vector2 heroPos = hero.transform.position, markerPos = marker.transform.position;
-            Assert.Less(Vector2.Distance(heroPos, markerPos), 0.5f, "hero starts at the respawn marker");
+            Assert.Less(Vector2.Distance(heroPos, markerPos), 0.05f, "hero starts at the respawn marker");
             Assert.AreEqual(marker.FacingRight, hero.FacingRight, "hero faces the way the marker says");
 #else
             yield break;
@@ -189,7 +189,7 @@ namespace Hollowknight.Silksong.Tests
 
         [Test]
         [Ignore("Task 11b: needs imported assets and scene")]
-        public void HeroAnimations_AllNeededClipsPresent_ForRunJumpDashWallAttackHurtDeath()
+        public IEnumerator HeroAnimations_AllNeededClipsPresent_ForRunJumpDashWallAttackHurtDeath()
         {
 #if UNITY_EDITOR
             var names = new List<string>(HeroClipNames.PlayedByHeroCode);
@@ -233,15 +233,41 @@ namespace Hollowknight.Silksong.Tests
             Assert.AreEqual(15f, run.frameRate);
             Assert.AreEqual(10f / 15f, run.length, 1e-3f);
 
-            // Every clip registers and plays by the name hero code uses.
+            // Every clip registers and plays by the name hero code uses. LoopSection clips come as an intro
+            // ("Jump") plus a looping "Jump Loop"; register both so the animator can chain them.
             var go = Track(new GameObject("AnimCheck", typeof(SpriteRenderer), typeof(Animator), typeof(UnitySpriteAnimator)));
             var animator = go.GetComponent<UnitySpriteAnimator>();
             foreach (var c in clips) animator.Register(c);
+            var loopParts = new List<string>();
+            foreach (var name in names)
+            {
+                var loop = AssetDatabase.LoadAssetAtPath<AnimationClip>(HeroClipNames.ImportFolder + "/" + name + UnitySpriteAnimator.LoopSuffix + ".anim");
+                if (loop == null) continue;
+                Assert.IsTrue(loop.isLooping, name + " loop part loops");
+                Assert.IsFalse(Clip(clips, name).isLooping, name + " intro plays once");
+                animator.Register(loop);
+                loopParts.Add(name);
+            }
+            foreach (var expected in new[] { "Jump", "Fall", "WallCling", "SlashDown", "Death" })
+                CollectionAssert.Contains(loopParts, expected, expected + " is a LoopSection clip in the source");
             foreach (var name in names)
             {
                 animator.Play(name);
                 Assert.IsTrue(animator.IsPlaying(name), name);
             }
+
+            // Jump and Fall chain into their loop and are not restarted by hero code calling Play every step.
+            foreach (var name in new[] { "Jump", "Fall" })
+            {
+                animator.Play(name);
+                yield return null;
+                yield return new WaitForSeconds(Clip(clips, name).length + 0.1f);
+                Assert.IsTrue(animator.IsPlaying(name + UnitySpriteAnimator.LoopSuffix), name + " chained into its loop part");
+                for (int i = 0; i < 5; i++) animator.Play(name);
+                Assert.IsTrue(animator.IsPlaying(name + UnitySpriteAnimator.LoopSuffix), name + " not restarted by repeated Play");
+            }
+#else
+            yield break;
 #endif
         }
 

@@ -32,15 +32,29 @@ namespace Hollowknight.Silksong.Tests
         }
 
         [Test]
-        public void ChangedValue_IsReportedByName()
+        public void ChangedMeasuredValue_FailsByName_ButProvisionalDriftOnlyWarns()
         {
             copy = ScriptableObject.CreateInstance<HeroConfig>();
             copy.RunSpeed = 9f;
             copy.AttackDownSize = new Vector2(2f, 2f);
+            copy.HurtKnockbackX = 1f;
             var problems = HeroConfigConsistency.FindValueMismatches(copy);
-            Assert.AreEqual(2, problems.Count, string.Join("\n", problems));
-            Assert.IsTrue(problems.Exists(p => p.StartsWith("RunSpeed")));
-            Assert.IsTrue(problems.Exists(p => p.StartsWith("AttackDownSize")));
+            Assert.AreEqual(1, problems.Count, string.Join("\n", problems));
+            StringAssert.StartsWith("RunSpeed", problems[0]);
+            var drift = HeroConfigConsistency.FindProvisionalDrift(copy);
+            Assert.AreEqual(2, drift.Count, string.Join("\n", drift));
+            Assert.IsTrue(drift.Exists(p => p.StartsWith("AttackDownSize")));
+            Assert.IsTrue(drift.Exists(p => p.StartsWith("HurtKnockbackX")));
+        }
+
+        [Test]
+        public void OwnerRetuneOfProvisionalValue_DoesNotFailTheAssert()
+        {
+            copy = ScriptableObject.CreateInstance<HeroConfig>();
+            copy.AttackSideSize = new Vector2(3f, 3f);
+            copy.PogoBounceSpeed = 20f;
+            UnityEngine.TestTools.LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex("Owner-tuned values changed"));
+            Assert.DoesNotThrow(() => HeroConfigConsistency.AssertAssetMatchesSilksong(copy));
         }
 
         [Test]

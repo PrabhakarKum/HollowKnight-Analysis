@@ -14,7 +14,7 @@ It reads the library from `D:\Asset HollowKnight Bundles\ExportedProject\Assets\
 |---|---|---|---|---|---|---|---|
 | Idle | yes | `Idle` | 6 | 12 | Loop | loops | none |
 | Run | yes | `Run` | 10 | 15 | Loop | loops | `Footstep` on frames 3 and 8 |
-| Jump | yes | `Airborne` | 15 | 16 | LoopSection, loop from frame 12 | `Jump` plays once and holds frame 14; `Jump Loop` holds frames 12 to 14 looping | none |
+| Jump | yes | `Airborne` | 15 | 16 | LoopSection, loop from frame 12 | `Jump` once, then chains into `Jump Loop` (frames 12 to 14 looping) | none |
 | Fall | yes | `Fall` | 7 | 15 | LoopSection, loop from frame 4 | `Fall` once, `Fall Loop` frames 4 to 6 | none |
 | Dash | yes | `Dash` | 9 | 16 | Once | plays once | `Footstep` on frame 3 |
 | WallCling | yes | `Wall Cling` | 8 | 14 | LoopSection, loop from frame 3 | once + `WallCling Loop` | none |
@@ -42,7 +42,7 @@ Every clip the plan lists exists in the library under a different name. None is 
 
 ## Differences and things to know (PROVISIONAL where marked)
 
-1. **LoopSection is not chained.** Unity has one loop flag per clip and no loop section. The converter writes the whole sequence as a non-looping clip and the loop part as a second looping clip named `<name> Loop`. `UnitySpriteAnimator` does not switch from one to the other, so these clips play once and hold the last frame (visually fine for `Jump`, `Fall`, `WallCling`, `Death`, `SlashDown`). It also raises `Completed` for them when the intro ends. Stub: `tk2d LoopSection chaining (intro clip, then the 'Loop' clip)`. PROVISIONAL: nothing in hero code listens for `Completed` of these clips yet.
+1. **LoopSection is chained by `UnitySpriteAnimator`.** Unity has one loop flag per clip, so the converter writes the whole sequence as a non-looping intro clip (`<name>`) and the loop part as a looping clip `<name> Loop`. When the intro ends the animator continues straight into `<name> Loop` and `Completed` is NOT raised for the intro; `Completed` is raised only when a non-looping clip ends with no `<name> Loop` registered. While either part is current, `IsPlaying(name)` is true and repeated `Play(name)` is ignored (hero code calls it every step); `Play` of a clip without a loop part still restarts as before. `Death` and `SlashDown` follow their source: the loop part keeps looping. No stub is involved.
 2. **Frame events.** `AnimationEvent` is `OnFrameEvent`, `intParameter` = frame index, `stringParameter` = the tk2d `eventInfo`, `floatParameter` = `eventFloat`. The tk2d `eventInt` is dropped (one int per event, and it carries the frame index).
 3. **Wrap modes.** Loop, Once, Single map directly. PingPong is unrolled forward then back without repeating the end frames and loops (event indexes are timeline positions). RandomFrame and RandomLoop (4, 5) have no Unity equivalent: they play as a plain loop and call `Stubs.NotImplemented("tk2d RandomFrame/RandomLoop wrap modes (played as a plain loop)")`. None of the hero clips above uses them.
 4. **Attack animation speed.** The original scales the attack clip by a speed multiplier so it fits the attack time. `ISpriteAnimator` has no speed setting. The `Slash` clip is 0.25 s long and `HeroConfig.AttackActiveSeconds` is 0.35 s. Not changed here (hero code and `HeroConfig` are frozen for this task).
@@ -55,3 +55,7 @@ Every clip the plan lists exists in the library under a different name. None is 
 Each distinct sprite is cut from its atlas once into `Imported/HeroAnimations/Sprites/<sprite name>.png` and re-used by every clip that points at it. Flipped sprites (stored turned 90 degrees) are turned back upright when cut. The pure rules (rectangle, rotation, pivot, pixels per unit, frame timeline and event planning) are in `Editor/Tk2dAnimationData.cs` and are unit tested with fixtures taken from the spike's Run data; the asset-writing part is `Editor/Tk2dAnimationConverter.cs`.
 
 `Tk2dAnimationConverter.Convert(path, outputFolder)` takes the library file with an optional clip name after `#` (for example `...\Knight.prefab#Run`). A library with more than one clip needs the name.
+
+## Duplicate clip names
+
+The Knight library holds 534 clips but only 501 distinct names. When a name appears more than once, the **first clip in file order** wins (`Tk2dAnimationData.FindClip`, tested). None of the 15 mapped names is duplicated (checked), so the rule does not change this table.

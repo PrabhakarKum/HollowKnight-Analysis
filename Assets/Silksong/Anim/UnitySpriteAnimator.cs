@@ -71,7 +71,13 @@ namespace Hollowknight.Silksong
         public void Play(string clip)
         {
             EnsureInit();
-            if (current != null && !finished && current.name == clip && currentLoops) return;
+            if (current != null && !finished)
+            {
+                if (current.name == clip && currentLoops) return;
+                // A clip with a registered "<name> Loop" continuation (a tk2d LoopSection clip) is one animation in
+                // two parts: repeating Play(name) while either part is current must not restart it.
+                if (HasLoopPart(clip) && (current.name == clip || current.name == clip + LoopSuffix)) return;
+            }
             StartClip(clip, 0);
         }
 
@@ -81,8 +87,14 @@ namespace Hollowknight.Silksong
             StartClip(clip, frame);
         }
 
+        // Playing "Jump" counts while its "Jump Loop" continuation runs.
         public bool IsPlaying(string clip) =>
-            current != null && !finished && current.name == clip;
+            current != null && !finished && (current.name == clip || (HasLoopPart(clip) && current.name == clip + LoopSuffix));
+
+        // Suffix the converter gives the looping part of a LoopSection clip.
+        public const string LoopSuffix = " Loop";
+
+        bool HasLoopPart(string name) => clipsByName.ContainsKey(name + LoopSuffix);
 
         void StartClip(string clipName, int frame)
         {
@@ -140,6 +152,10 @@ namespace Hollowknight.Silksong
             manualFired.Clear();
             if (!currentLoops && playable.GetTime() >= current.length)
             {
+                // End of an intro: continue straight into its loop part. Completed is NOT raised for the intro;
+                // it is raised only when a non-looping clip ends with no continuation.
+                string next = current.name + LoopSuffix;
+                if (clipsByName.ContainsKey(next)) { StartClip(next, 0); return; }
                 finished = true;
                 Completed?.Invoke(current.name);
             }

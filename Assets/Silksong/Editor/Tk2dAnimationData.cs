@@ -209,6 +209,19 @@ namespace Hollowknight.Silksong.Editor
             return defs;
         }
 
+        // Picks a clip by name. The export holds duplicate names (534 clips, 501 distinct), so the rule is fixed:
+        // the FIRST clip with that name in file order wins. With no name, the library must hold exactly one clip.
+        public static Tk2dClip FindClip(IList<Tk2dClip> clips, string clipName)
+        {
+            if (string.IsNullOrEmpty(clipName))
+            {
+                if (clips.Count == 1) return clips[0];
+                throw new ArgumentException("The library holds " + clips.Count + " clips; name one with 'path#ClipName'");
+            }
+            for (int i = 0; i < clips.Count; i++) if (clips[i].Name == clipName) return clips[i];
+            throw new KeyNotFoundException("No clip named '" + clipName + "' in the library");
+        }
+
         // ---------- geometry ----------
 
         // The recipe from the spike (docs/study/00-spike-report.md, Check C): the pixel rectangle is the uv box
@@ -290,12 +303,11 @@ namespace Hollowknight.Silksong.Editor
                 case Tk2dWrapMode.LoopSection:
                 {
                     // Unity has one loop flag per clip, no loop section. Intro clip plays once; the loop part is a
-                    // separate looping clip. Nothing chains them yet (see STUBS.md).
+                    // separate looping clip. UnitySpriteAnimator chains them (intro, then "<name> Loop").
                     set.Main = Build(clip, name, Range(0, n), false);
                     int start = clip.LoopStart;
                     if (start >= 0 && start < n)
                         set.LoopPart = Build(clip, name + " Loop", Range(start, n - start), true);
-                    set.UnsupportedFeature = "tk2d LoopSection chaining (intro clip, then the 'Loop' clip)";
                     break;
                 }
                 case Tk2dWrapMode.RandomFrame:
