@@ -91,12 +91,14 @@ namespace Hollowknight.Silksong
 
             if (jumping) vel = SustainJump(vel, cfg, input.Jump.IsPressed, dt);
 
-            // Gravity also acts while standing: the contact stops the body, and only a real contact may
-            // cancel the fall, so a falling hero cannot hover above the floor.
-            if (!jumping) vel.y = Mathf.Max(vel.y - cfg.Gravity * dt, -cfg.FallSpeedMax);
+            // Standing still must stay still on any floor the probe accepts (a frictionless body would
+            // otherwise creep down slopes). Requires being grounded on the previous step too, so a hero
+            // that is still arriving keeps falling until it really touches.
+            int dir = (owner.WantsRight ? 1 : 0) - (owner.WantsLeft ? 1 : 0);
+            if (!jumping && grounded && wasGrounded && dir == 0) vel = Vector2.zero;
+            else if (!jumping) vel.y = Mathf.Max(vel.y - cfg.Gravity * dt, -cfg.FallSpeedMax);
 
             // Run is digital like the original: a tilted stick past the threshold is full speed.
-            int dir = (owner.WantsRight ? 1 : 0) - (owner.WantsLeft ? 1 : 0);
             vel.x = dir * cfg.RunSpeed;
             if (dir != 0) owner.FacingRight = dir > 0;
 

@@ -35,13 +35,13 @@ is cleared the moment a jump starts, and is not granted when the hero left the g
 window is inclusive: a jump is allowed while the time since leaving the floor (0 on the step it left) is at most
 CoyoteSeconds, so 0.08 s allows five steps at 50 Hz. I did not trace the original counter order, so it may allow one
 step fewer; the window equals the config value by definition.
-is cleared the moment a jump starts, and is not granted when the hero left the ground by jumping.
 
 **Jump buffering.** A jump press that cannot act yet is remembered for 2 steps (0.04 s) and fires when the hero
 can jump. The memory is dropped if the button is released in a later step than the press; a press and release inside
 one fixed step still counts (a tap), and then holds the jump for the minimum time. The window is inclusive: age 0 is
 the press step, usable while the age is at most JumpBufferSeconds (three steps at 50 Hz). The original tests its
-queue counter with a less-or-equal against 2, which is the same inclusive counting; for coyote I did not trace the
+queue counter with a less-or-equal against 2 (read from the code, unverified at run time), which would be the same
+inclusive counting; for coyote I did not trace the
 counter order, so it may differ by one step.
 
 **Gravity and fall cap.** The hero's body uses the engine's gravity. The project gravity is 60 downward and the

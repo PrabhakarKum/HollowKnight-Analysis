@@ -33,9 +33,16 @@ namespace Hollowknight.Silksong.Tests
         [TearDown]
         public void TearDown()
         {
-            ClearWorld();
-            if (config != null) UnityEngine.Object.DestroyImmediate(config);
-            Physics2D.simulationMode = savedMode;
+            // The simulation mode is global state: restore it even if cleanup throws.
+            try
+            {
+                ClearWorld();
+                if (config != null) UnityEngine.Object.DestroyImmediate(config);
+            }
+            finally
+            {
+                Physics2D.simulationMode = savedMode;
+            }
         }
 
         // Immediate destruction so a second world in the same test never overlaps the first.
@@ -361,6 +368,55 @@ namespace Hollowknight.Silksong.Tests
             float gap = hero.transform.position.y - HeroHalfHeight; // floor top is y = 0
             Assert.IsTrue(hero.IsGrounded);
             Assert.LessOrEqual(gap, Physics2D.defaultContactOffset * 2f, $"hero hovers {gap:F3} above the floor");
+        }
+
+        // A floor tilted by `degrees` whose surface passes through the origin; the hero is dropped
+        // just above it.
+        void BuildSlopeWorld(float degrees)
+        {
+            BuildWorld(false, 0f, 0f);
+            var ground = spawned[0] as GameObject;
+            float a = degrees * Mathf.Deg2Rad;
+            var normal = new Vector2(-Mathf.Sin(a), Mathf.Cos(a));
+            ground.transform.position = -0.5f * (Vector3)normal;
+            ground.transform.rotation = Quaternion.Euler(0f, 0f, degrees);
+            hero.transform.position = new Vector3(0f, 0.8f, 0f);
+            Physics2D.SyncTransforms();
+        }
+
+        void AssertIdleDoesNotCreep(float degrees)
+        {
+            foreach (float step in new[] { 0.02f, 0.01f })
+            {
+                dt = step;
+                BuildSlopeWorld(degrees);
+                Step(Mathf.RoundToInt(1f / dt)); // arrive and settle
+                Assert.IsTrue(hero.IsGrounded, $"{degrees} degrees at dt {dt}: hero should be standing");
+                Vector2 before = hero.transform.position;
+                Step(100);
+                float moved = Vector2.Distance(before, hero.transform.position);
+                Assert.Less(moved, 0.01f, $"{degrees} degrees at dt {dt}: idle hero crept {moved:F4}");
+            }
+        }
+
+        [Test]
+        public void Idle_OnThirtyDegreeSlope_DoesNotCreep() => AssertIdleDoesNotCreep(30f);
+
+        [Test]
+        public void Idle_OnFortyFiveDegreeSlope_DoesNotCreep() => AssertIdleDoesNotCreep(45f);
+
+        [Test]
+        public void Idle_OnFlatGround_NoExtraLandedEvents_AndGroundedStable()
+        {
+            BuildWorld(false, 0f, 0f);
+            int landed = 0;
+            hero.Landed += () => landed++;
+            for (int i = 0; i < 100; i++)
+            {
+                Step(1);
+                Assert.IsTrue(hero.IsGrounded, $"lost the ground on step {i}");
+            }
+            Assert.LessOrEqual(landed, 1);
         }
 
         [Test]

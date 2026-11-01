@@ -22,9 +22,11 @@ namespace Hollowknight.Silksong
         // times its hero gravity scale (1).
         public float Gravity = 60f;
         public float FallSpeedMax = 30f;
-        // Grace after leaving a ledge (4 steps of 0.02 s).
+        // Grace after leaving a ledge: the original counts 4 steps (0.08 s at 50 Hz). Here the window is
+        // inclusive seconds, so at 50 Hz it covers one more step than the original count.
         public float CoyoteSeconds = 0.08f;
-        // How long an early jump press is remembered (2 steps of 0.02 s).
+        // How long an early jump press is remembered: the original queue is 2 steps (0.04 s at 50 Hz). Here
+        // the window is inclusive seconds, so at 50 Hz it covers one more step than the original count.
         public float JumpBufferSeconds = 0.04f;
 
         [Header("Input thresholds (from docs/study/04-input.md)")]
