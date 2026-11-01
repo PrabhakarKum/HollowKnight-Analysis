@@ -4,7 +4,6 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.InputSystem;
-using UnityEngine.SceneManagement;
 
 namespace Hollowknight.Silksong.Editor
 {
@@ -67,15 +66,11 @@ namespace Hollowknight.Silksong.Editor
             var actionsAsset = AssetDatabase.LoadAssetAtPath<InputActionAsset>(InputActionsPath);
             if (actionsAsset == null) throw new InvalidOperationException("Missing " + InputActionsPath);
 
-            // A previous build may still be open (the menu opens it afterwards); saving over a loaded scene
-            // is unreliable, so unload it first.
-            CloseLoadedScene(scenePath);
-
-            // Additive so the scene the user (or test runner) has open is never replaced; closed again below.
-            var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
-            try
+            // Single, not Additive: batch mode and fresh test runs start with an untitled unsaved scene, and Unity
+            // refuses an additive NewScene on top of it. Single also unloads a previously built copy of this
+            // scene (the menu leaves it open), so saving over it is safe.
+            var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
             {
-                SceneManager.SetActiveScene(scene);
                 BuildWorld();
                 var hero = BuildHero(actionsAsset, out var actions);
                 BuildCamera(hero.transform);
@@ -83,10 +78,8 @@ namespace Hollowknight.Silksong.Editor
                 if (!EditorSceneManager.SaveScene(scene, scenePath))
                     throw new InvalidOperationException("Could not save " + scenePath);
             }
-            finally
-            {
-                EditorSceneManager.CloseScene(scene, true);
-            }
+            // Leave a clean untitled scene loaded so nothing holds the saved file open.
+            EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
             AssetDatabase.Refresh();
             return scenePath;
         }
@@ -102,18 +95,6 @@ namespace Hollowknight.Silksong.Editor
             }
             try { return Font.CreateDynamicFontFromOSFont("Arial", 16); }
             catch (Exception) { return null; }
-        }
-
-        static void CloseLoadedScene(string scenePath)
-        {
-            for (int i = 0; i < SceneManager.sceneCount; i++)
-            {
-                var s = SceneManager.GetSceneAt(i);
-                if (s.path != scenePath) continue;
-                if (SceneManager.sceneCount == 1) EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
-                else EditorSceneManager.CloseScene(s, true);
-                return;
-            }
         }
 
         static void EnsureFolder(string folder)

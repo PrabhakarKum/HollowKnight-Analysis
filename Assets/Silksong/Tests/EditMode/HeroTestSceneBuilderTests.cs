@@ -25,7 +25,10 @@ namespace Hollowknight.Silksong.Tests
             AssetDatabase.Refresh();
         }
 
-        static Scene OpenAdditive(string path) => EditorSceneManager.OpenScene(path, OpenSceneMode.Additive);
+        // Single mode: an additive open next to the untitled unsaved start scene is the kind of state Unity refuses.
+        static Scene OpenScene(string path) => EditorSceneManager.OpenScene(path, OpenSceneMode.Single);
+
+        static void ResetScene() => EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
         static T[] All<T>(Scene scene) where T : Component =>
             scene.GetRootGameObjects().SelectMany(g => g.GetComponentsInChildren<T>(true)).ToArray();
@@ -39,7 +42,7 @@ namespace Hollowknight.Silksong.Tests
             HeroTestSceneBuilder.Build(TempScene);
             Assert.IsTrue(File.Exists(TempScene), "scene file written");
 
-            var scene = OpenAdditive(TempScene);
+            var scene = OpenScene(TempScene);
             try
             {
                 var heroes = All<HeroController>(scene);
@@ -63,7 +66,7 @@ namespace Hollowknight.Silksong.Tests
                 Assert.AreSame(config, huds[0].Config, "hero is wired to the HeroConfig asset");
                 Assert.AreSame(heroes[0], huds[0].Hero);
             }
-            finally { EditorSceneManager.CloseScene(scene, true); }
+            finally { ResetScene(); }
         }
 
         [Test]
@@ -71,18 +74,18 @@ namespace Hollowknight.Silksong.Tests
         {
             HeroTestSceneBuilder.Build(TempScene);
             int configsBefore = AssetDatabase.FindAssets("t:HeroConfig").Length;
-            var first = OpenAdditive(TempScene);
+            var first = OpenScene(TempScene);
             int objectsFirst = CountObjects(first);
-            EditorSceneManager.CloseScene(first, true);
+            ResetScene();
 
             HeroTestSceneBuilder.Build(TempScene);
-            var second = OpenAdditive(TempScene);
+            var second = OpenScene(TempScene);
             try
             {
                 Assert.AreEqual(objectsFirst, CountObjects(second), "same object count after a second build");
                 Assert.AreEqual(1, All<HeroController>(second).Length);
             }
-            finally { EditorSceneManager.CloseScene(second, true); }
+            finally { ResetScene(); }
             Assert.AreEqual(configsBefore, AssetDatabase.FindAssets("t:HeroConfig").Length, "config asset not duplicated");
         }
 
@@ -90,7 +93,7 @@ namespace Hollowknight.Silksong.Tests
         public void Build_ContainsSlopesAtThirtyAndFortyFiveDegrees()
         {
             HeroTestSceneBuilder.Build(TempScene);
-            var scene = OpenAdditive(TempScene);
+            var scene = OpenScene(TempScene);
             try
             {
                 var angles = All<Collider2D>(scene)
@@ -99,7 +102,7 @@ namespace Hollowknight.Silksong.Tests
                 Assert.IsTrue(angles.Any(a => Mathf.Abs(a - 30f) < 0.5f), "a collider rotated about 30 degrees");
                 Assert.IsTrue(angles.Any(a => Mathf.Abs(a - 45f) < 0.5f), "a collider rotated about 45 degrees");
             }
-            finally { EditorSceneManager.CloseScene(scene, true); }
+            finally { ResetScene(); }
         }
 
         [Test]
@@ -116,6 +119,15 @@ namespace Hollowknight.Silksong.Tests
         }
 
         [Test]
+        public void Build_SucceedsFromAnUntitledUnsavedScene()
+        {
+            // The exact state batch mode and a fresh test run start in, which broke the additive version.
+            ResetScene();
+            Assert.DoesNotThrow(() => HeroTestSceneBuilder.Build(TempScene));
+            Assert.IsTrue(File.Exists(TempScene));
+        }
+
+        [Test]
         public void Build_SucceedsWhenLabelFontIsUnavailable()
         {
             var original = HeroTestSceneBuilder.LabelFontProvider;
@@ -127,26 +139,26 @@ namespace Hollowknight.Silksong.Tests
             }
             finally { HeroTestSceneBuilder.LabelFontProvider = original; }
 
-            var scene = OpenAdditive(TempScene);
+            var scene = OpenScene(TempScene);
             try
             {
                 Assert.AreEqual(1, All<HeroController>(scene).Length, "scene still has the hero");
                 Assert.AreEqual(0, All<TextMesh>(scene).Length, "no labels without a font");
             }
-            finally { EditorSceneManager.CloseScene(scene, true); }
+            finally { ResetScene(); }
         }
 
         [Test]
         public void Build_IsRepeatableWhileTheSceneIsOpen()
         {
             HeroTestSceneBuilder.Build(TempScene);
-            var open = OpenAdditive(TempScene);
+            var open = OpenScene(TempScene);
             int objects = CountObjects(open);
 
             // The menu leaves the built scene open, so a rebuild must cope with it being loaded.
             HeroTestSceneBuilder.Build(TempScene);
 
-            var again = OpenAdditive(TempScene);
+            var again = OpenScene(TempScene);
             try
             {
                 Assert.AreEqual(objects, CountObjects(again));
@@ -156,7 +168,7 @@ namespace Hollowknight.Silksong.Tests
                     if (SceneManager.GetSceneAt(i).path == TempScene) loadedCopies++;
                 Assert.AreEqual(1, loadedCopies);
             }
-            finally { EditorSceneManager.CloseScene(again, true); }
+            finally { ResetScene(); }
         }
 
         [Test]
