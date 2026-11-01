@@ -138,8 +138,8 @@ arrives while a dash is not yet possible is remembered briefly and fires when it
 | 16 | Down dash (in the air, down held, no sideways) | none | yes, straight down at fall speed, 0.25 s | not built; logs a stub and does a normal sideways dash | DIFFERENT, deferred |
 | 17 | Gamepad/keys buttons | shift, x, east, right trigger | the Dash action | the `IHeroInput.Dash` edge | n/a |
 
-Count: 7 differences that change feel (rows 1, 2, 3, 5, 6, 7, 14) plus 2 more (row 4 follows from 1 and 2; row 16 is a
-whole extra move). Time base: all new-hero timers are seconds reduced by the step length, so 50 and 100 Hz agree.
+Count: 9 DIFFERENT rows (1, 2, 3, 4, 5, 6, 7, 14, 16); row 4 follows from rows 1 and 2, and 16 is a whole extra move.
+Time base: all new-hero timers are seconds reduced by the step length, so 50 and 100 Hz agree.
 
 ### PROVISIONAL (owner to confirm)
 
