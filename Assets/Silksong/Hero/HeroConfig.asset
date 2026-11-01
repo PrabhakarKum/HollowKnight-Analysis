@@ -33,6 +33,13 @@ MonoBehaviour:
   AttackActiveSeconds: 0.35
   AttackCooldownSeconds: 0.41
   PogoBounceSpeed: 12
+  AttackSideSize: {x: 1.1, y: 1.2}
+  AttackSideOffset: {x: 0.8, y: 0.15}
+  AttackUpSize: {x: 1.4, y: 0.8}
+  AttackUpOffset: {x: 0, y: 1.15}
+  AttackDownSize: {x: 1.4, y: 0.5}
+  AttackDownOffset: {x: 0, y: 0}
+  AttackDamage: 1
   HurtInvulnerableSeconds: 1
   HurtKnockbackX: 15
   HurtKnockbackY: 0
