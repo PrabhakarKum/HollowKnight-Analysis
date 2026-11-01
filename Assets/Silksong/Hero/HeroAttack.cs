@@ -283,6 +283,20 @@ namespace Hollowknight.Silksong
             owner.Animator?.Play("Jump");
         }
 
+        // A hit ends the swing, the hitbox and the bounce at once; the cooldown keeps running.
+        internal void CancelForDamage()
+        {
+            EndSwing();
+            bouncing = false;
+            bounceElapsed = 0f;
+        }
+
+        // Respawn: no swing, bounce or cooldown left, so the next press swings immediately.
+        internal void ResetForRespawn()
+        {
+            OnDisable();
+        }
+
         // A disabled hero must not come back mid-swing, mid-bounce or with a stale cooldown.
         void OnDisable()
         {

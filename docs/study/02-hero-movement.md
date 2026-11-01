@@ -152,8 +152,9 @@ Each logs once through `Stubs.NotImplemented`: `Hero dash buffer` (row 7, when a
 jump-shortened dash cooldown` (row 6), `Hero sprint after dash` (row 14), `Hero dash ends at wall` (row 15) and
 `Hero down dash` (row 16). Still unbuilt without a stub: the "dash unlocked" check.
 
-Note for Task 10 (damage): the dash ends by itself if the hero state becomes Hurt or Dead between steps, rather than
-overwriting it. That path has no test yet because hurt cannot be set through a public API; add one with the damage task.
+Note (closed by Task 10, damage): the dash ends by itself if the hero state becomes Hurt or Dead between steps, rather
+than overwriting it. `HeroMovement` no longer rewrites Hurt or Dead either, and the path is now tested through the real
+damage API (see `docs/study/06-damage-and-respawn.md` and `HeroHealthTests`).
 
 ## Wall
 

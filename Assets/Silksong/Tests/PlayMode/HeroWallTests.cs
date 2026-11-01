@@ -348,10 +348,9 @@ namespace Hollowknight.Silksong.Tests
             SetState(HeroState.Hurt);
             Step(1);
             Assert.IsFalse(hero.Wall.IsClinging);
-            // HeroMovement still rewrites State every step (it does for the dash too), so Hurt itself cannot be
-            // asserted to survive here; a damage system must hold the state. What is checked: the wall did not re-assert
-            // WallClinging over it, and did not zero the sideways speed or cap the fall.
-            Assert.AreNotEqual(HeroState.WallClinging, hero.State, "the cling must not re-assert itself over hurt");
+            // HeroMovement no longer rewrites Hurt/Dead (the damage task), so the state now survives the step.
+            // The full real-API version of this is Hurt_WhileClinging_EndsClingAndStateStaysHurt in HeroHealthTests.
+            Assert.AreEqual(HeroState.Hurt, hero.State, "neither the wall nor movement may overwrite hurt");
             // The slide cap is no longer applied, so gravity keeps pulling past it.
             Assert.Less(hero.Velocity.y, -config.WallSlideSpeed - 0.5f);
         }

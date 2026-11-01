@@ -282,8 +282,8 @@ namespace Hollowknight.Silksong.Tests
         }
 
         // Hurt or Dead set mid-dash must end the dash instead of being overwritten (HeroDash.FixedStep). It is
-        // not tested here because HeroController.State has an internal setter and no damage API exists yet;
-        // Task 10 (damage) should add a test once hurt can be triggered through the real API.
+        // Tested through the real damage API in HeroHealthTests (Hurt_EndsDash_AndDashDoesNotOverwriteHurt,
+        // Death_WhileDashing_ClearsDashAndStateOnRespawn).
 
         [Test]
         public void Dash_FacingDirectionFollowsRule()

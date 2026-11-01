@@ -269,6 +269,15 @@ namespace Hollowknight.Silksong
             unstickTime = 0f;
         }
 
+        // Hurt, death and respawn: let go and drop any forced wall-jump motion at once.
+        internal void ResetForDamage()
+        {
+            ResetAll();
+            touchingSide = 0;
+            lockElapsed = 0f;
+            riseElapsed = 0f;
+        }
+
         // A disabled hero must not come back clinging or mid-push.
         void OnDisable()
         {

@@ -106,8 +106,24 @@ namespace Hollowknight.Silksong
 
             wasGrounded = grounded;
             owner.IsGrounded = grounded;
+            // Hurt and Dead belong to the health system: movement must not overwrite them (it ran over them
+            // before the damage task existed). Health hands the state back itself when the stun ends.
+            if (owner.State == HeroState.Hurt || owner.State == HeroState.Dead) return;
             owner.State = grounded ? HeroState.Grounded : (vel.y > 0f ? HeroState.Rising : HeroState.Falling);
             PlayAnimation(dir != 0);
+        }
+
+        // Hurt, death and respawn drop a jump in progress, the buffered press and the coyote window, and forget
+        // the ground contact so the next step re-reads it. Landing counters are left alone.
+        public void ResetForDamage()
+        {
+            jumping = false;
+            jumpElapsed = 0f;
+            bufferArmed = false;
+            bufferSurvivesRelease = false;
+            coyoteArmed = false;
+            wasGrounded = false;
+            airTime = 0f;
         }
 
         // While the button is held the rise speed is simply re-set to JumpSpeed each step (gravity is

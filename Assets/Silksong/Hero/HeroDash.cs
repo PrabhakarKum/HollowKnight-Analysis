@@ -108,6 +108,22 @@ namespace Hollowknight.Silksong
             return true;
         }
 
+        // A hit ends a dash in progress at once; the cooldown keeps running.
+        internal void CancelForDamage()
+        {
+            dashing = false;
+            dashRemaining = 0f;
+        }
+
+        // Respawn (and disabling) leaves no dash, cooldown or spent air dash behind.
+        internal void ResetForRespawn()
+        {
+            dashing = false;
+            dashRemaining = 0f;
+            cooldownRemaining = 0f;
+            airDashUsed = false;
+        }
+
         // A disabled hero must not come back mid-dash or with a stale cooldown or air-dash flag.
         void OnDisable()
         {

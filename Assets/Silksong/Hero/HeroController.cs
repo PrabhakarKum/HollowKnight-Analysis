@@ -48,6 +48,7 @@ namespace Hollowknight.Silksong
         public HeroDash Dash => dash;
         public HeroWall Wall => wall;
         public HeroAttack Attack => attack;
+        public HeroHealth Health => health;
 
         Rigidbody2D body;
         Collider2D bodyCollider;
@@ -55,6 +56,7 @@ namespace Hollowknight.Silksong
         HeroDash dash;
         HeroWall wall;
         HeroAttack attack;
+        HeroHealth health;
         PhysicsMaterial2D runtimeMaterial;
 
         internal Rigidbody2D Body => body;
@@ -94,7 +96,13 @@ namespace Hollowknight.Silksong
             attack = GetComponent<HeroAttack>();
             if (attack == null) attack = gameObject.AddComponent<HeroAttack>();
             attack.Bind(this);
+            health = GetComponent<HeroHealth>();
+            if (health == null) health = gameObject.AddComponent<HeroHealth>();
+            health.Bind(this);
         }
+
+        // Hurt and death cancel a jump in progress and its buffers (the original resets all motion).
+        internal void ResetMovement() => movement.ResetForDamage();
 
         void FixedUpdate()
         {
@@ -105,12 +113,16 @@ namespace Hollowknight.Silksong
         public void StepFixed(float dt)
         {
             if (Input == null || Config == null) return;
+            // Health first: it ticks invulnerability, and while the hero is stunned by a hit (or dead) it owns the
+            // velocity outright, like the dash does, so movement and the wall must not run (see HeroHealth).
+            bool owned = health.FixedStep(dt);
             // While dashing, the dash owns velocity and movement must not run (it would zero or overwrite it).
             bool dashed = dash.FixedStep(dt);
             // The swing starts before movement and wall so a swing on a wall changes the cling in this same
             // step; its pogo is applied after them because movement rewrites vertical velocity (see HeroAttack).
             attack.BeginStep(dt, dashed);
-            if (dashed) wall.OnDashStep();
+            if (owned) wall.BeginStep(dt);   // sees Hurt/Dead and lets go of everything; never starts a wall jump
+            else if (dashed) wall.OnDashStep();
             else if (!wall.BeginStep(dt))
             {
                 // A wall jump handles its own step; otherwise movement runs and the wall adjusts its result.
