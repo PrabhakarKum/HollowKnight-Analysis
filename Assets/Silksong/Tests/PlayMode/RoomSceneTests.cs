@@ -187,7 +187,7 @@ namespace Hollowknight.Silksong.Tests
 
         // ---------- 3. animations (11b) ----------
 
-        [Test]
+        [UnityTest]
         [Ignore("Task 11b: needs imported assets and scene")]
         public IEnumerator HeroAnimations_AllNeededClipsPresent_ForRunJumpDashWallAttackHurtDeath()
         {
