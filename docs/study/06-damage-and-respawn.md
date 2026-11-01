@@ -59,7 +59,7 @@ before, then attack-end. Why:
   (the dash uses the same hand-over).
 - A landed hit cancels, at once and not a step later: a dash in progress, the wall cling and wall-jump push, the
   swing and its hitbox, the pogo bounce, and a jump in progress with its buffers (`HeroMovement.ResetForDamage`).
-  Cooldowns (dash, swing) keep running. Dash, wall and attack also still end themselves if something else sets the
+  Cooldowns (dash, swing) keep running. A hit does not forget the ground contact, so a hero left on the floor never raises `Landed` again; the stun is tracked by an explicit flag so a float undershoot cannot skip its end. Dash, wall and attack also still end themselves if something else sets the
   state to Hurt or Dead, so a state set from outside is handled too.
 - Hit rules: no damage for a hit of 0 or less; ignored while invulnerable, stunned or dead; ignored when the hit's
   source is the hero itself or one of its children (the hero's own swing never hurts it; `HeroAttack` also never offers
@@ -94,13 +94,13 @@ Say "keep prototype" for a DIFFERENT row to put the prototype value into `HeroCo
 |---|---|---|---|---|---|
 | 1 | Invulnerability after a hit | 1.3 s (`invulnerableTime`) | 1 s (`INVUL_TIME`), starts with the recoil | 1 s (`HurtInvulnerableSeconds`), starts at the hit | DIFFERENT |
 | 2 | Knockback horizontal speed | 9 (`damageRecoilVelocity.x`) | 15 (`RECOIL_VELOCITY`) | 15 (`HurtKnockbackX`) | DIFFERENT, **PROVISIONAL** (config value is flagged in the ledger; the 15 itself matches the prefab) |
-| 3 | Knockback vertical speed | 5 | half of the horizontal speed = 7.5 | 0 (`HurtKnockbackY`) | DIFFERENT, **PROVISIONAL** (the ledger default 0 disagrees with the original's 7.5) |
+| 3 | Knockback vertical speed | 5 | 7.5, derived (the recoil vector y is `RECOIL_VELOCITY * 0.5`; no stored field) | 0 (`HurtKnockbackY`, the ledger default in the frozen asset) | DIFFERENT, **PROVISIONAL** (the owner decides whether to change the asset value) |
 | 4 | Knockback duration (stun) | 0.2 s (`damageRecoilTime`) | 0.2 s (`RECOIL_DURATION`) | 0.2 s (`HurtStunSeconds`) | same |
 | 5 | Gravity during the knockback | off | off | off (movement is bypassed) | same |
 | 6 | Steering during the knockback | ignored | ignored (no-input state) | ignored | same |
 | 7 | Speed at the end of the knockback | stops dead | stops dead (`ResetMotion`) | stops dead | same |
 | 8 | Knockback direction | away from the source x (at or right of it pushes right) | away from the damage side (left / right) | away from the source x, at or right of it pushes right; no source: away from facing | DIFFERENT (mechanism) |
-| 9 | Hero turns to face the source | no (not read) | yes | yes | DIFFERENT |
+| 9 | Hero turns to face the source | yes (`BeginDamageRecoil` faces the source) | yes | yes | same |
 | 10 | Hit refused while | invulnerable, in knockback, dead, respawning, god mode | invulnerable, recoiling, dead, damage mode none, many special states (parry, evade, shadow dash, ...) | invulnerable, stunned, dead; zero damage; own hit | DIFFERENT, special states deferred (no stub: those mechanics do not exist) |
 | 11 | Zero-damage hit | refused | does nothing to the hero (may still notify the attacker) | refused | same |
 | 12 | Hit-stop on damage | off in the asset (`heroDamageFreeze` None, code supports it) | yes: 0 s down, 0.1 s hold, 0.1 s up | OFF (owner decision); stub `Hero damage hit-stop` | DIFFERENT, by owner decision |
@@ -114,8 +114,8 @@ Say "keep prototype" for a DIFFERENT row to put the prototype value into `HeroCo
 | 20 | Damage by hazard type, boss-level scaling, tool modifiers | none (amount from the source) | yes | not built, no stub (no hazard or tool system); amount comes from the hit | DIFFERENT, deferred |
 | 21 | Hit cancels the swing | yes | yes | yes (hitbox off, cooldown keeps running) | same |
 | 22 | Hit cancels dash | yes | yes (dash ends with the state change) | yes, at once | same |
-| 23 | Hit cancels wall slide | not read | yes | yes, at once | same |
-| 24 | Hit cancels a pogo bounce | not read | yes (and zeroes vertical speed) | yes (vertical speed is set by the knockback) | same |
+| 23 | Hit cancels wall slide | yes (`CancelAllActions` calls `CancelWallSlide`) | yes | yes, at once | same |
+| 24 | Hit cancels a pogo bounce | yes (`CancelAllActions` clears bouncing) | yes (and zeroes vertical speed) | yes (vertical speed is set by the knockback) | same |
 | 25 | Hit cancels a jump in progress | yes (motion reset) | yes (`ResetMotion`) | yes (`HeroMovement.ResetForDamage`) | same |
 | 26 | Hit cancels nail charge, silk specials, binding | n/a | yes | n/a (not built) | n/a |
 | 27 | Death trigger | health reaches 0 | health reaches 0 | health reaches 0 | same |
@@ -137,15 +137,15 @@ Say "keep prototype" for a DIFFERENT row to put the prototype value into `HeroCo
 | 43 | Own attacks hurt the hero | no | no (attacks hit enemies only) | no: refused by source check; `HeroAttack` never targets its owner | same |
 | 44 | State shown while hurt | `Damaged` | no-input actor state plus recoil flag | `HeroState.Hurt`, held by health | same in effect |
 
-Count: 26 DIFFERENT rows (1, 2, 3, 8, 9, 10, 12, 13, 14, 15, 17, 18, 19, 20, 29, 30, 31, 32, 33, 35, 36, 38, 39, 40, 41,
-42); 18 same or n/a (4, 5, 6, 7, 11, 16, 21 to 28, 34, 37, 43, 44; rows 16 and 26 are n/a). 44 rows in total.
+Count: 25 DIFFERENT rows (1, 2, 3, 8, 10, 12, 13, 14, 15, 17, 18, 19, 20, 29, 30, 31, 32, 33, 35, 36, 38, 39, 40, 41,
+42); 19 same or n/a (4, 5, 6, 7, 9, 11, 16, 21 to 28, 34, 37, 43, 44; rows 16 and 26 are n/a). 44 rows in total.
 Time base: every new-hero timer is seconds reduced by the step length, so 50 and 100 Hz agree within one step.
 
 ### PROVISIONAL (owner to confirm)
 
 1. `HurtKnockbackX` 15 (row 2): the number is the original's `RECOIL_VELOCITY`; it is the damage recoil speed in the
    code I read, so it is probably right, but the ledger kept it flagged.
-2. `HurtKnockbackY` 0 (row 3): the original pushes up at half the horizontal speed (7.5). `HeroConfig` is frozen, so
+2. `HurtKnockbackY` 0 (row 3): the original pushes up at half the horizontal speed, 7.5 (derived: recoil vector y = `RECOIL_VELOCITY * 0.5`, not a stored field). The field exists in `HeroConfig`; 0 is the ledger default in the frozen asset, so
    the ledger value 0 is used. Changing the config default is the owner's call (the prototype uses 5).
 3. Auto-respawn delay 1.6 s (row 32): the prototype's number, a stand-in for the original's death screen.
 4. The knockback is a plain forced speed for 0.2 s; the original applies it after the freeze-frame, which is not built.

@@ -114,15 +114,15 @@ namespace Hollowknight.Silksong
         }
 
         // Hurt, death and respawn drop a jump in progress, the buffered press and the coyote window, and forget
-        // the ground contact so the next step re-reads it. Landing counters are left alone.
-        public void ResetForDamage()
+        // the ground contact only when asked (respawn), so a hit that leaves the hero on the floor never raises Landed.
+        public void ResetForDamage(bool forgetGround)
         {
             jumping = false;
             jumpElapsed = 0f;
             bufferArmed = false;
             bufferSurvivesRelease = false;
             coyoteArmed = false;
-            wasGrounded = false;
+            if (forgetGround) wasGrounded = false;
             airTime = 0f;
         }
 

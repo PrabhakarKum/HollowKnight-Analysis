@@ -31,6 +31,8 @@ namespace Hollowknight.Silksong
         bool dead;
         float invulnerableRemaining;
         float stunRemaining;
+        // Explicit flag: the float countdown can undershoot zero, and the end-of-stun hand-back must still run.
+        bool stunActive;
         float knockDirection = 1f;
         float deathElapsed;
 
@@ -56,13 +58,13 @@ namespace Hollowknight.Silksong
         public bool IsDead => dead;
         public bool IsInvulnerable => invulnerableRemaining > 0f;
         // True while the knockback is forcing the hero's velocity (the hurt state).
-        public bool IsStunned => stunRemaining > 0f;
+        public bool IsStunned => stunActive;
         public float InvulnerableRemaining => Mathf.Max(0f, invulnerableRemaining);
         public float StunRemaining => Mathf.Max(0f, stunRemaining);
         // The last marker the hero respawned at; used by the automatic respawn after a death.
         public RespawnMarker CurrentMarker { get; private set; }
 
-        public bool CanTakeDamage => !dead && invulnerableRemaining <= 0f && stunRemaining <= 0f;
+        public bool CanTakeDamage => !dead && invulnerableRemaining <= 0f && !stunActive;
 
         public event Action Damaged;
         public event Action Died;
@@ -114,7 +116,8 @@ namespace Hollowknight.Silksong
             invulnerableRemaining = cfg.HurtInvulnerableSeconds;
             Stubs.NotImplemented("Hero invulnerability flicker");
             stunRemaining = cfg.HurtStunSeconds;
-            if (stunRemaining > TimeEpsilon)
+            stunActive = stunRemaining > TimeEpsilon;
+            if (stunActive)
             {
                 owner.State = HeroState.Hurt;
                 body.linearVelocity = KnockbackVelocity(cfg);
@@ -138,13 +141,14 @@ namespace Hollowknight.Silksong
                 return;
             }
 
-            CancelActions();
+            CancelActions(true);
             owner.Dash.ResetForRespawn();
             owner.Attack.ResetForRespawn();
 
             dead = false;
             invulnerableRemaining = 0f;
             stunRemaining = 0f;
+            stunActive = false;
             deathElapsed = 0f;
             data.health = data.maxHealth;
 
@@ -197,12 +201,13 @@ namespace Hollowknight.Silksong
                 return true;
             }
 
-            if (stunRemaining <= 0f) return false;
+            if (!stunActive) return false;
 
             // The stun ends on the step after its last forced step, and movement runs in that same step.
             if (stunRemaining <= TimeEpsilon)
             {
                 stunRemaining = 0f;
+                stunActive = false;
                 // The original stops the hero dead at the end of the recoil, then gravity takes over again.
                 owner.Body.linearVelocity = Vector2.zero;
                 owner.State = HeroState.Falling;
@@ -223,18 +228,19 @@ namespace Hollowknight.Silksong
         }
 
         // Ends everything the hero was doing. Cooldowns keep running (a hit); respawn clears them separately.
-        void CancelActions()
+        void CancelActions(bool forgetGround = false)
         {
             owner.Dash.CancelForDamage();
             owner.Wall.ResetForDamage();
             owner.Attack.CancelForDamage();
-            owner.ResetMovement();
+            owner.ResetMovement(forgetGround);
         }
 
         void EnterDeath()
         {
             dead = true;
             stunRemaining = 0f;
+            stunActive = false;
             invulnerableRemaining = 0f;
             deathElapsed = 0f;
             owner.State = HeroState.Dead;
@@ -253,6 +259,7 @@ namespace Hollowknight.Silksong
             dead = false;
             invulnerableRemaining = 0f;
             stunRemaining = 0f;
+            stunActive = false;
             deathElapsed = 0f;
             if (owner != null && (owner.State == HeroState.Hurt || owner.State == HeroState.Dead))
                 owner.State = HeroState.Falling;

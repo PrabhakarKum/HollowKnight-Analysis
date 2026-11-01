@@ -384,6 +384,7 @@ namespace Hollowknight.Silksong.Tests
 
         [TestCase(0.02f)]
         [TestCase(0.01f)]
+        [TestCase(0.007f)]
         public void Timers_AreSecondsAndMatchAt50And100Hz(float step)
         {
             dt = step;
@@ -405,6 +406,42 @@ namespace Hollowknight.Silksong.Tests
             Assert.AreEqual(config.HurtStunSeconds, stunnedSteps * dt, 0.021f, "stun seconds at dt " + dt);
             Assert.AreEqual(config.HurtInvulnerableSeconds, (invulnerableSteps + 1) * dt, 0.021f, "invulnerability seconds at dt " + dt);
             Assert.IsTrue(Hit(1, -2f), "vulnerable again once the window is over");
+        }
+
+        // Regression: the float countdown can undershoot zero (e.g. -2e-9 at dt 0.01). The stun must still end,
+        // hand the state back and release the velocity, whatever the step length.
+        [TestCase(0.02f)]
+        [TestCase(0.01f)]
+        [TestCase(0.007f)]
+        [TestCase(0.013f)]
+        public void Stun_AlwaysEnds_AndStateReturnsToGrounded(float step)
+        {
+            dt = step;
+            BuildWorld(0f);
+            Settle();
+            Assert.IsTrue(Hit(1, -2f));
+            Assert.IsTrue(hero.Health.IsStunned);
+
+            int n = 0;
+            while (hero.State == HeroState.Hurt && n < 400) { Step(1); n++; }
+
+            Assert.Less(n, 400, "the stun must end (dt " + step + ")");
+            Assert.IsFalse(hero.Health.IsStunned);
+            Assert.AreEqual(0f, hero.Velocity.x, 0.01f);
+            Step(3);
+            Assert.AreEqual(HeroState.Grounded, hero.State);
+        }
+
+        [Test]
+        public void Hit_OnTheGround_DoesNotRaiseLandedAgain()
+        {
+            BuildWorld(0f);
+            Settle();
+            int landed = 0;
+            hero.Landed += () => landed++;
+            Assert.IsTrue(Hit(1, -2f));
+            Step(Steps(config.HurtStunSeconds) + 6);
+            Assert.AreEqual(0, landed, "the hero never left the floor");
         }
 
         [Test]

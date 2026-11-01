@@ -30,6 +30,8 @@ namespace Hollowknight.Silksong
         // Layers the hero treats as floor. Default is everything; the room task narrows it.
         public LayerMask GroundLayers = ~0;
 
+        // Hurt and Dead are owned by HeroHealth (HeroMovement never overwrites them, so a stray Hurt/Dead set by anything
+        // else would stay stuck). Only HeroHealth, and tests that simulate it, may set them.
         public HeroState State { get; internal set; } = HeroState.Falling;
         public bool IsGrounded { get; internal set; }
         public bool FacingRight { get; internal set; } = true;
@@ -102,7 +104,7 @@ namespace Hollowknight.Silksong
         }
 
         // Hurt and death cancel a jump in progress and its buffers (the original resets all motion).
-        internal void ResetMovement() => movement.ResetForDamage();
+        internal void ResetMovement(bool forgetGround) => movement.ResetForDamage(forgetGround);
 
         void FixedUpdate()
         {
