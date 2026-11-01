@@ -52,6 +52,18 @@ namespace Hollowknight.Silksong
             var kb = Keyboard.current;
             if (kb != null && kb.rKey.wasPressedThisFrame && hero != null && spawn != null && hero.Health != null)
                 hero.Health.RespawnAt(spawn);
+
+            // H and K are also test-room only. H: a hit for 1 from the front (the hero is pushed backwards).
+            // K: a hit for the hero's whole current health, so it dies. Both go through the normal TakeHit, so they
+            // are ignored during invulnerability, like any hit. The source is null: the knockback then points away
+            // from the way the hero faces.
+            if (kb != null && hero != null && hero.Health != null)
+            {
+                if (kb.hKey.wasPressedThisFrame)
+                    hero.Health.TakeHit(new HitInstance { Damage = 1, Direction = AttackDirection.Normal });
+                if (kb.kKey.wasPressedThisFrame)
+                    hero.Health.TakeHit(new HitInstance { Damage = Mathf.Max(1, hero.Health.Health), Direction = AttackDirection.Normal });
+            }
         }
 
         void LateUpdate()

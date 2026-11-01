@@ -26,6 +26,7 @@ change a committed file and break it for everyone else.
 
 - A flat grey room 90 units wide with a small 5-unit pit, two blue jump platforms, and two purple walls 4 units
   apart (the wall-jump shaft).
+  Two red spike patches (hazards) sit on the floor and in the pit. After any builder change, rebuild the scene.
 - The hero (Silksong sprites, 0.5 x 2.08 unit body) standing at the green start point on the left, idle animation playing.
 - Two red training dummies on the right: one on the floor and one floating high (pogo target).
 - The camera follows the hero with look-ahead and stops at the room edges.
@@ -36,7 +37,8 @@ change a committed file and break it for everyone else.
 - Dash across the pit, or fall in and cling to its wall.
 - In the shaft, jump at one wall, hold toward it to cling, then jump away and catch the other wall to climb.
 - Jump over the floating dummy and swing down on it to bounce.
-- R puts the hero back at the start.
+- R puts the hero back at the start. H hits the hero for 1 and K kills it (test room only); it respawns at the start after 1.6 s.
+- Walk onto the red spikes (one on the floor near x = 33, one in the pit) to take damage: 1 per hit, knockback away, then 1 s of protection.
 
 If the hero faces the wrong way when you turn, tick or untick "Art Faces Left" on the `HeroSceneBootstrap` object.
 That box is only about which way the sprites look; it does not change any hero value.

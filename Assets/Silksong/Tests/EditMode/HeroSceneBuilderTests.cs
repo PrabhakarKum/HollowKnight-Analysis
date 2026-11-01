@@ -111,6 +111,9 @@ namespace Hollowknight.Silksong.Tests
                 Assert.AreEqual(1, Find<GameCamera>().Length);
                 Assert.AreEqual(1, Find<RoomBounds>().Length);
                 Assert.GreaterOrEqual(Find<TrainingDummy>().Length, 1);
+                var spikes = Find<HazardZone>();
+                Assert.AreEqual(2, spikes.Length, "two spike hazards: floor and pit");
+                foreach (var z in spikes) Assert.IsTrue(z.GetComponent<Collider2D>().isTrigger, z.name + " must be a trigger");
                 Assert.IsNotNull(Find<UnitySpriteAnimator>().Single());
             }
             finally { EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single); }

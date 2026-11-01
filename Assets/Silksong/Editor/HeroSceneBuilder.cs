@@ -174,6 +174,21 @@ namespace Hollowknight.Silksong.Editor
             // Wall jump shaft: two walls 4 units apart; zig-zag up and step onto the ledge on the right.
             Block(world, "ShaftWallLeft", 38f, 40f, 16f, FloorBottom, wall);
             Block(world, "ShaftWallRight", 44f, 54f, 16f, FloorBottom, wall);
+
+            // Damage practice: red spikes, one on the floor and one in the pit. Touch them to be hurt (the damage,
+            // knockback and invulnerability all come from HazardZone / HeroHealth / HeroConfig, nothing set here).
+            Spikes(world, "SpikesFloor", new Vector2(33f, 0.25f), new Vector2(2f, 0.5f));
+            Spikes(world, "SpikesPit", new Vector2((PitMinX + PitMaxX) * 0.5f, PitBottom + 0.25f), new Vector2(2f, 0.5f));
+        }
+
+        static void Spikes(Transform parent, string name, Vector2 center, Vector2 size)
+        {
+            var sr = Visual(parent, name, center, size, new Color(0.9f, 0.1f, 0.1f));
+            sr.sortingOrder = 1;
+            var col = sr.gameObject.AddComponent<BoxCollider2D>();
+            col.size = Vector2.one;
+            col.isTrigger = true;
+            sr.gameObject.AddComponent<HazardZone>();
         }
 
         static SpriteRenderer Visual(Transform parent, string name, Vector2 center, Vector2 size, Color color)

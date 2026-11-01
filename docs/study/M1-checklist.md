@@ -11,11 +11,11 @@ All numbers below come from `Assets/Silksong/Hero/HeroConfig.asset`. Distances a
    your exported game files (default `D:\Asset HollowKnight Bundles\ExportedProject`).
 3. Menu **Silksong > Build Hero Scene**. A red Console message means step 2 was skipped.
 4. Unity opens `Assets/Scenes/SilksongHeroRoom.unity`. Press **Play**.
-5. You should see: a flat grey room, a small pit, two blue platforms, two purple walls 4 units apart (the wall shaft),
+5. You should see: a flat grey room, a small pit, two blue platforms, two purple walls 4 units apart (the wall shaft), two red spike patches (one on the floor, one in the pit),
    the hero at the green start point on the left, a red dummy on the floor and a red dummy floating high on the right.
 
 Keys: A/D or left/right arrows = move. W/S or up/down arrows = look, and aim the needle up/down. Z or Space = jump.
-C = dash. X = attack. R = put the hero back at the start (test room only).
+C = dash. X = attack. Test room only: R = put the hero back at the start, H = hit the hero for 1, K = kill the hero.
 If the hero faces the wrong way when you turn, tick or untick "Art Faces Left" on the `HeroSceneBootstrap` object.
 
 ## The checks (one line each)
@@ -34,13 +34,13 @@ If the hero faces the wrong way when you turn, tick or untick "Art Faces Left" o
 | 10 | Needle down | In the air, hold S or Down arrow, press X. | Slash goes below the feet. |
 | 11 | Pogo | Jump over the floating dummy (right side of the room), hold Down and press X while above it. | Hero bounces upward off it (12 u/s for 0.25 s) and can do it again, so you can keep bouncing on it. |
 | 12 | Dummy reacts | Hit either red dummy with a side swing, then from above. | The dummy visibly reacts on every hit and never dies (it refills after each hit). Every hit registers, however many you land. |
-| 13 | Take damage | See the warning below. | Lose 1 health (of 5). Hero is pushed away from the source (15 u/s) and stunned for 0.2 s, then cannot be hurt again for 1 s. |
-| 14 | Die | See the warning below. | After the 5th hit the hero loses control and dies. |
-| 15 | Respawn | After dying, wait; or press R at any time. | After 1.6 s the hero reappears on the green start marker with control and full health. R does the same instantly. |
+| 13 | Take damage | Walk onto the red spikes on the floor (about x = 33, between the pit and the shaft) or the red spikes in the pit. Or press H (a hit for 1 from the front). | Lose 1 health (of 5). Hero is pushed away from the spikes (15 u/s sideways, no upward push) and stunned for 0.2 s, then cannot be hurt again for 1 s. Standing on the spikes costs 1 health per second at most, never more than one per second. |
+| 14 | Die | Keep standing on the spikes until health is gone (5 hits), or press K (a hit for all remaining health). | The hero loses control and stays down (no input works), and cannot take further hits while dead. |
+| 15 | Respawn | After dying, wait; or press R at any time. | About 1.6 s after dying the hero reappears on the green start marker with control and full health (5). R does the same instantly, even while alive. |
 
-**Warning on 13 and 14.** The built room has no spike, enemy or damage zone, and no key that hurts the hero. The
-damage rules are covered by automated tests (`HeroHealthTests`), but you cannot trigger them by playing this room yet.
-Mark these two as "Blocked: no damage source in the room" until one is added (the builder has reported this).
+The spikes and the H and K keys exist only in this test room. After the room builder changes you must rebuild the
+scene (menu **Silksong > Build Hero Scene**) to get them; an old built scene has no spikes and ignores H and K.
+Spikes hurt and knock back like any hit; the real game's "put the hero back on safe ground" after spikes is not built.
 
 ## Side by side with the real game: what to compare
 
@@ -61,7 +61,7 @@ Write what differs in the Comments column and say which way (too fast, too slow,
 ## Known provisional values the owner should judge
 
 These could not be confirmed from the game's data. They are best guesses. If one feels wrong, change the field in
-`Assets/Silksong/Hero/HeroConfig.asset` (unless noted).
+`Assets/Silksong/Hero/HeroConfig.asset` (unless noted); camera values are on the `Settings` of the `GameCamera` component.
 
 | What | Field to change | Now | Why it is a guess |
 |------|-----------------|-----|-------------------|
@@ -77,7 +77,7 @@ These could not be confirmed from the game's data. They are best guesses. If one
 | Speed after a dash | none (code) | n/a | The real game decides this elsewhere; here you resume running if a direction is held. |
 | Dash direction while clinging | none (code) | n/a | Not read from the real game. |
 | Auto-respawn delay | `deathRespawnDelaySeconds` on the hero's `HeroHealth` component | 1.6 s | Stands in for the real death screen. Negative turns it off. |
-| Look up/down camera rule | `GameCameraSettings` | 0.85 s, 6 units | The numbers are real; the "standing still" test is a reading of it. |
+| Look up/down camera rule | `LookDelaySeconds`, `LookOffset` on the `GameCamera` object's `Settings` | 0.85 s, 6 units | The numbers are real; the "standing still" test is a reading of it. |
 | Falling animation | none (animation mapping) | `Fall` | The real game uses a later frame of the jump clip. |
 | Dash animation | none (animation mapping) | `Dash`, 0.56 s | The clip keeps playing a little after the 0.1 s dash ends. |
 
