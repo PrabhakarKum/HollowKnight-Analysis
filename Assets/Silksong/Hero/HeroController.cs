@@ -45,10 +45,12 @@ namespace Hollowknight.Silksong
         public bool ManualStepping { get; set; }
 
         public event Action Landed;
+        public HeroDash Dash => dash;
 
         Rigidbody2D body;
         Collider2D bodyCollider;
         HeroMovement movement;
+        HeroDash dash;
         PhysicsMaterial2D runtimeMaterial;
 
         internal Rigidbody2D Body => body;
@@ -78,6 +80,10 @@ namespace Hollowknight.Silksong
             }
 
             movement = new HeroMovement(this);
+            // Added here so a hero built from code or an older scene gets a dash without extra setup.
+            dash = GetComponent<HeroDash>();
+            if (dash == null) dash = gameObject.AddComponent<HeroDash>();
+            dash.Bind(this);
         }
 
         void FixedUpdate()
@@ -89,10 +95,10 @@ namespace Hollowknight.Silksong
         public void StepFixed(float dt)
         {
             if (Input == null || Config == null) return;
-            movement.FixedStep(dt);
+            // While dashing, the dash owns velocity and movement must not run (it would zero or overwrite it).
+            if (!dash.FixedStep(dt)) movement.FixedStep(dt);
 
-            // Dash and attack arrive in later tasks; flag the press so the gap is visible.
-            if (Input.Dash.WasPressed) Stubs.NotImplemented("Hero dash");
+            // Attack arrives in a later task; flag the press so the gap is visible.
             if (Input.Attack.WasPressed) Stubs.NotImplemented("Hero attack");
         }
 

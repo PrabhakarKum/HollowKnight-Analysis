@@ -99,3 +99,54 @@ Dash, wall, attack and hurt fields are declared now and unused until their tasks
   same and the number of steps changes.
 - Hero starts and stops with instant velocity changes, as the original does; no smoothing was added.
 - Not built: air hang, double jump, brolly float, walk zones, slopes, conveyors, updrafts, mantle.
+
+## Dash
+
+Summary in my own words. Sources, all read only: the dash start, per-step dash, finish and cancel code in
+`HeroController.cs` (the decompiled export), the serialized numbers in `Hero_Hornet.prefab`
+(`DASH_SPEED`, `DASH_TIME`, `AIR_DASH_TIME`, `DOWN_DASH_TIME`, `DASH_QUEUE_STEPS`, `DASH_COOLDOWN`), and the owner's
+prototype (`PlayerController2D.cs`, `PlayerTuning.cs`, `PlayerTuning.asset`; prototype step counts are converted at
+0.02 s per step). The prototype was only read, never changed.
+
+How it plays: a press starts a straight horizontal burst at a fixed speed with no vertical speed and no gravity.
+When its time runs out gravity returns and normal movement takes over. The cooldown starts when the dash starts, not
+when it ends. One dash is allowed per airtime; touching the floor (or sliding on a wall) gives it back. A press that
+arrives while a dash is not yet possible is remembered briefly and fires when it becomes possible.
+
+### Comparison: prototype vs Silksong vs the new hero
+
+"New hero" follows Silksong's measured value unless noted. Rows marked DIFFERENT need the owner's decision: say
+"keep prototype" for any row to put the prototype value into `HeroConfig` instead.
+
+| # | Parameter or rule | Prototype | Silksong (source) | New hero uses | |
+|---|---|---|---|---|---|
+| 1 | Dash speed | 22 | 28 (prefab `DASH_SPEED`) | 28 | DIFFERENT |
+| 2 | Ground dash time | 0.18 s (9 steps) | 0.1 s (prefab `DASH_TIME`) | 0.1 s | DIFFERENT |
+| 3 | Air dash time | 0.16 s (8 steps) | 0.02 s in the prefab (`AIR_DASH_TIME`), but the code uses it as the air dash length and it is far too short to match the known feel; the rest may live in the sprint state machine, which cannot be read | 0.1 s (same as ground) | DIFFERENT, **PROVISIONAL** |
+| 4 | Ground distance | 3.96 | 2.8 (28 x 0.1) | 2.8 | DIFFERENT (follows 1 and 2) |
+| 5 | Cooldown | 0.46 s (23 steps), from dash start | 0.425 s (prefab `DASH_COOLDOWN`), from dash start | 0.425 s from dash start | DIFFERENT |
+| 6 | Cooldown shortened by jumping | cut to 3 steps (0.06 s) when a jump starts | set to 0.05 s when a jump starts | not built (would need a hook in `HeroMovement`, outside this task) | DIFFERENT, deferred |
+| 7 | Press buffer | 6 steps (0.12 s) | 10 steps (0.2 s, prefab `DASH_QUEUE_STEPS`), only while the button stays held | not built (no config field; recommended follow-up) | DIFFERENT, deferred |
+| 8 | Direction | held left/right, else facing | held left/right (not both), else facing | same | same |
+| 9 | Vertical speed and gravity | speed forced to 0, gravity skipped | speed 0, body gravity switched off, restored at the end | speed 0 and gravity skipped; gravity resumes the step after the dash ends | same |
+| 10 | Air dashes per airtime | 1 | 1 (a flag set on an airborne dash) | 1 | same |
+| 11 | Refresh of the air dash | landing, wall slide, wall jump | landing, wall slide, jumping from floor or wall, several move resets | landing now; wall refresh when the wall task exists (stub) | same |
+| 12 | Can start | cooldown over and (grounded or air dash left or wall sliding) | same, plus not in hard landing, not already dashing, not hurt/dead, and the ability must be unlocked | cooldown over, grounded or air dash left, not hurt or dead | same (unlock check not built) |
+| 13 | Exit speed | run speed in the held direction, else zero | not set by the dash; the sprint machine takes over | movement resumes the same step (run speed if held, else stop) | **PROVISIONAL** |
+| 14 | Sprint after dash | rolls into a sprint if the dash button is still held | asks the sprint machine to try a sprint | not built (stub) | DIFFERENT, deferred |
+| 15 | Wall contact while dashing | ends the dash and starts a wall slide | the per-step dash code starts a wall slide if one is possible | not built (wall task) | same |
+| 16 | Down dash (in the air, down held, no sideways) | none | yes, straight down at fall speed, 0.25 s | not built; logs a stub and does a normal sideways dash | DIFFERENT, deferred |
+| 17 | Gamepad/keys buttons | shift, x, east, right trigger | the Dash action | the `IHeroInput.Dash` edge | n/a |
+
+Count: 7 differences that change feel (rows 1, 2, 3, 5, 6, 7, 14) plus 2 more (row 4 follows from 1 and 2; row 16 is a
+whole extra move). Time base: all new-hero timers are seconds reduced by the step length, so 50 and 100 Hz agree.
+
+### PROVISIONAL (owner to confirm)
+
+1. Air dash time = 0.1 s (row 3). The prefab number 0.02 s could not be reconciled with how the dash is used.
+2. Exit speed after the dash (row 13). The dash code does not set it and the sprint state machine could not be read.
+
+### Not built here (stubs and follow-ups)
+
+Dash press buffer (row 7), jump-shortened cooldown (row 6), sprint after dash (row 14), down dash (row 16, logs a
+stub), wall interactions (row 15), and the "dash unlocked" check.
