@@ -1,0 +1,39 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6e6780cd14b8da345a679020b61a32be, type: 3}
+  m_Name: HeroConfig
+  m_EditorClassIdentifier: 
+  RunSpeed: 8.25
+  JumpSpeed: 18.6
+  JumpHoldMaxSeconds: 0.18
+  JumpHoldMinSeconds: 0.04
+  JumpReleaseMultiplier: 0.5
+  Gravity: 60
+  FallSpeedMax: 30
+  CoyoteSeconds: 0.08
+  JumpBufferSeconds: 0.04
+  HorizontalPressThreshold: 0.3
+  VerticalPressThreshold: 0.5
+  DashSpeed: 28
+  DashSeconds: 0.1
+  DashCooldownSeconds: 0.425
+  WallSlideSpeed: 6
+  WallJumpSpeedX: 25
+  WallJumpSpeedY: 18.6
+  WallJumpLockSeconds: 0.3
+  AttackActiveSeconds: 0.35
+  AttackCooldownSeconds: 0.41
+  PogoBounceSpeed: 12
+  HurtInvulnerableSeconds: 1
+  HurtKnockbackX: 15
+  HurtKnockbackY: 0
+  HurtStunSeconds: 0.2
