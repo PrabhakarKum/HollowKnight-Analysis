@@ -42,9 +42,17 @@ The gamepad face-button names are position based: Action1 is the south button, A
 - `HeroInputActions.inputactions` holds the bindings above on the Input System.
 - `HeroActions` samples once per `Update` and turns the result into `InputButton` snapshots (`IsPressed`,
   `WasPressed`, `WasReleased`, `HeldSeconds`) behind `IHeroInput`. Queue timers are not here; hero code owns them.
+- Edge contract: the hero reads input in `FixedUpdate`, which does not run once per frame. Press and release
+  edges are therefore latched in `Update` and cleared after the fixed step that could read them. A press in a
+  frame with no fixed step is seen by the next step; a frame with two fixed steps reports it once. `IsPressed`
+  and `HeldSeconds` are plain level values. Taps shorter than one input update still register.
 - Opposite keys held give 0 on that axis (the 2D vector composite cancels them).
-- `OnApplicationFocus(false)` calls `ReleaseAll()`: all buttons and the stick are cleared, a release is reported
-  once, and a key still physically down stays off until it is let go and pressed again.
+- `OnApplicationFocus(false)` calls `ReleaseAll()`: every button is cleared and its release reported, and a key
+  still physically down stays off until it is let go and pressed again (a button that was up is not affected).
+  `Move` is level input: it reads zero until the next Update and then follows whatever stick or key is
+  physically held.
+- The original's press thresholds (0.3 horizontal, 0.5 vertical) are not applied here: `Move` is analogue.
+  Task 6 (hero movement) applies them when it turns `Move` into left/right/up/down intent.
 
 ### Deliberate deviations
 
@@ -52,5 +60,8 @@ The gamepad face-button names are position based: Action1 is the south button, A
   original has no such keys (A and D belong to cast and dream nail there), but the Task 4 tests use them and they
   are comfortable. Cast and dream nail are not built, so no conflict yet.
 - The dead zone values are applied to the left stick only; the d-pad and keys are digital.
+- The right stick is not bound (the original uses whichever stick is pushed further).
+- The stick dead zone stacks on the gamepad stick's own built-in dead zone, so the effective lower bound is
+  slightly above 0.15.
 - Trigger press point uses the Input System default (0.5); the original's value was not found.
 - No rebinding and no controller-type specific layouts (the original has per-pad-type mapping).
