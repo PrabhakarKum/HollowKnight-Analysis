@@ -11,7 +11,8 @@ namespace Hollowknight.Silksong
         // files newer than this rather than guessing at them.
         public const int CurrentVersion = 1;
 
-        public int version = CurrentVersion;
+        // Defaults to 0 on purpose: a file with no version key must read as invalid, not be stamped current.
+        public int version;
         public int health;
         public int maxHealth;
         public int silk;

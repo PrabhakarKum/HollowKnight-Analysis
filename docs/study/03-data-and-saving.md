@@ -49,12 +49,16 @@ pretending to exist; these are simply out of scope.
 
 Differences by design:
 - `version` is a plain integer (`PlayerData.CurrentVersion = 1`), easier to compare than the
-  original's string. A file with a higher number is never loaded or overwritten.
+  original's string. A file with a higher number is never loaded, and `TrySave` refuses to
+  overwrite it (same for a file that cannot be read at that moment).
+- A file is accepted only if it has version 1 or later, positive max health, health and silk
+  within their maximums, and a respawn scene; otherwise it counts as corrupt.
 - No encryption and no binary serializer (security risk and unnecessary here). Plain JSON via
   `JsonUtility`.
 - Atomic write: the new data goes to a temp file, then replaces the old one, so a crash mid-save
   keeps the previous save.
-- A corrupt file is renamed to `*.corrupt` (kept for recovery) and defaults are returned.
+- A corrupt file is renamed to `*.corrupt` (numbered if one exists already, never deleted) and
+  defaults are returned. Saving over a corrupt file quarantines it first.
 - A missing file returns new-game defaults and writes nothing.
 
 ## Open questions
