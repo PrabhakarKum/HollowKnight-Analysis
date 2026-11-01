@@ -23,7 +23,7 @@ It reads the library from `D:\Asset HollowKnight Bundles\ExportedProject\Assets\
 | SlashDown | yes | `DownSpike` | 4 | 25 | LoopSection, loop from frame 2 | once + `SlashDown Loop` | none |
 | Hurt | yes | `Recoil` | 9 | 24.2424 | Once | once | none |
 | Death | yes | `Death` | 16 | 12 | LoopSection, loop from frame 5 | once, holds the last frame + `Death Loop` | none |
-| Land | no (later) | `Land` | 14 | 24 | Once | once | none |
+| Land | yes (on touchdown, standing still) | `Land` | 14 | 24 | Once | once | none |
 | WallSlide | no (later) | `Wall Slide` | 9 | 12 | LoopSection, loop from frame 6 | once + `WallSlide Loop` | none |
 | WallJump | no (later) | `Walljump` | 14 | 15 | Once | once | none |
 | SlashAlt | no (later) | `SlashAlt` | 5 | 20 | Once | once | none |
@@ -59,3 +59,11 @@ Each distinct sprite is cut from its atlas once into `Imported/HeroAnimations/Sp
 ## Duplicate clip names
 
 The Knight library holds 534 clips but only 501 distinct names. When a name appears more than once, the **first clip in file order** wins (`Tk2dAnimationData.FindClip`, tested). None of the 15 mapped names is duplicated (checked), so the rule does not change this table.
+
+## Landing, and the other state changes (task 13)
+
+**What the hero does now.** When `Landed` is raised and the hero is standing still, `Land` plays once. The per-step Idle request is held back while `Land` is playing (`ISpriteAnimator.IsPlaying`), and Idle follows when it finishes. No clip length is hard-coded. Running, jumping or falling, dashing, a swing, being hurt or dying cut it at once; `Run` is never blocked. Landing while a direction is held goes straight to `Run`. A hero that starts on the floor, or is respawned there, raises no `Landed` (the existing rule) and so plays no `Land`.
+
+**What the original does (read from its `HeroAnimationController`).** It also plays `Land` on airborne-to-idle (`Land Q`, a quieter version, when hurt or enraged) and holds Idle back while `Land` or any of a list of "settle" clips runs; when the clip ends it plays Idle. It differs in four ways: (1) landing while running plays `Land To Run`, not `Run` straight away; (2) a landing during a swing plays `Slash Land` / `Slash Land Run`; (3) a hard landing after a long fall is a separate state and clip, `HardLand`; (4) `Land To Run` is also used when the player starts running during `Land`. None of these clips is imported; the hero uses `Run` for (1) and (4), and has no hard-landing state, so (3) is not built. PROVISIONAL.
+
+**Other abrupt cuts that exist today (listed, not built).** The original has a transition clip for each: Idle to Run = `Idle To Run` (and `Idle To Run Short`, `Idle To Run Weak`); Run to Idle = `Run To Idle` (`Walk To Idle`); Dash to Idle = `Dash To Idle`, Dash to Run = `Dash To Run`; Sprint to Run = `Sprint To Run`; Slash to Run = `Slash To Run`; Fall = `Airborne` from frame 7, not a separate `Fall`; Fall to Land = `Land`. The hero code switches straight between the plain clips for all of them (item 5 above for dash). Also, the hero's movement step used to replace a swing's clip with Idle/Run/Fall on the step the swing started; it now leaves the `Slash*` clips alone while a swing is active.

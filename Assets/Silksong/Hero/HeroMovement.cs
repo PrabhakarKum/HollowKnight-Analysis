@@ -23,6 +23,11 @@ namespace Hollowknight.Silksong
         bool jumping;
         float jumpElapsed;
 
+        // Landing animation: Landed was raised and "Land" has not started yet / "Land" was started by us and may
+        // still be running. Both are dropped the moment the hero runs, leaves the floor, swings or is hurt.
+        bool landPending;
+        bool landing;
+
         // Seconds since the hero left the floor (0 on the step it left); a ledge jump is allowed while
         // this is within CoyoteSeconds, inclusive.
         float airTime;
@@ -70,7 +75,7 @@ namespace Hollowknight.Silksong
             {
                 airTime = 0f;
                 coyoteArmed = true;
-                if (!wasGrounded && everAirborne) owner.RaiseLanded();
+                if (!wasGrounded && everAirborne) { landPending = true; owner.RaiseLanded(); }
             }
             else
             {
@@ -108,7 +113,7 @@ namespace Hollowknight.Silksong
             owner.IsGrounded = grounded;
             // Hurt and Dead belong to the health system: movement must not overwrite them (it ran over them
             // before the damage task existed). Health hands the state back itself when the stun ends.
-            if (owner.State == HeroState.Hurt || owner.State == HeroState.Dead) return;
+            if (owner.State == HeroState.Hurt || owner.State == HeroState.Dead) { landPending = landing = false; return; }
             owner.State = grounded ? HeroState.Grounded : (vel.y > 0f ? HeroState.Rising : HeroState.Falling);
             PlayAnimation(dir != 0);
         }
@@ -119,6 +124,7 @@ namespace Hollowknight.Silksong
         {
             jumping = false;
             jumpElapsed = 0f;
+            landPending = landing = false;
             bufferArmed = false;
             bufferSurvivesRelease = false;
             coyoteArmed = false;
@@ -181,14 +187,42 @@ namespace Hollowknight.Silksong
             return false;
         }
 
-        // Clip names are placeholders; the animation task maps them to the real clips.
+        // The hero's own clip names; the importer saves the original's clips under them (docs/study/07).
+        //
+        // Land: on the step Landed is raised and the hero stands still, "Land" plays once. While it runs the per-step
+        // Idle request is held back; when it finishes (IsPlaying turns false) Idle follows. Anything else cuts it at
+        // once: running (Run is never blocked), leaving the floor (jump, fall, dash, wall), being hurt, or a swing.
+        // Landing while already moving goes straight to Run.
         void PlayAnimation(bool moving)
         {
+            if (owner.State != HeroState.Grounded || moving) landPending = landing = false;
             var anim = owner.Animator;
             if (anim == null) return;
+            // A swing is an overlay on movement (HeroAttack sets no HeroState): do not replace its clip with
+            // Idle/Run/Fall on the step it started, or it would never show.
+            if (owner.Attack != null && owner.Attack.IsAttacking
+                && (anim.IsPlaying("Slash") || anim.IsPlaying("SlashUp") || anim.IsPlaying("SlashDown")))
+            {
+                landPending = landing = false;
+                return;
+            }
             switch (owner.State)
             {
-                case HeroState.Grounded: anim.Play(moving ? "Run" : "Idle"); break;
+                case HeroState.Grounded:
+                    if (moving) anim.Play("Run");
+                    else if (landPending)
+                    {
+                        landPending = false;
+                        landing = true;
+                        anim.Play("Land");
+                    }
+                    else if (landing && anim.IsPlaying("Land")) { }
+                    else
+                    {
+                        landing = false;
+                        anim.Play("Idle");
+                    }
+                    break;
                 case HeroState.Rising: anim.Play("Jump"); break;
                 default: anim.Play("Fall"); break;
             }

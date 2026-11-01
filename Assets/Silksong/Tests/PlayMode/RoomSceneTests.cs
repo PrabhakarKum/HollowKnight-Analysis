@@ -277,6 +277,32 @@ namespace Hollowknight.Silksong.Tests
             Assert.AreEqual(expectFlip, visual.flipX, "artFacesLeft=" + artFacesLeft + " facingRight=" + facingRight);
         }
 
+        // The hero body is drawn between physics steps in the scene (the camera moves every frame), but stays
+        // un-interpolated when no bootstrap is involved so hand-stepped tests are exact.
+        [UnityTest]
+        public IEnumerator Bootstrap_SetsBodyInterpolation_WhileTheBareHeroKeepsNone()
+        {
+            var bare = Track(new GameObject("BareHero"));
+            bare.AddComponent<BoxCollider2D>();
+            bare.AddComponent<HeroController>();
+            Assert.AreEqual(RigidbodyInterpolation2D.None, bare.GetComponent<Rigidbody2D>().interpolation);
+
+            var heroGo = Track(new GameObject("Hero"));
+            heroGo.AddComponent<BoxCollider2D>();
+            var hero = heroGo.AddComponent<HeroController>();
+            heroGo.AddComponent<HeroActions>();
+            var bootGo = Track(new GameObject("Bootstrap"));
+            bootGo.SetActive(false);
+            var boot = bootGo.AddComponent<HeroSceneBootstrap>();
+            SetField(boot, "hero", hero);
+            SetField(boot, "actions", heroGo.GetComponent<HeroActions>());
+            SetField(boot, "config", Track(ScriptableObject.CreateInstance<HeroConfig>()));
+            bootGo.SetActive(true);
+
+            yield return null; // Start runs after every Awake, so it has the last word over HeroController.Awake
+            Assert.AreEqual(RigidbodyInterpolation2D.Interpolate, heroGo.GetComponent<Rigidbody2D>().interpolation);
+        }
+
         // ---------- 3. animations (11b) ----------
 
         [UnityTest]

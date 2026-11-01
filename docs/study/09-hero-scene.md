@@ -51,3 +51,8 @@ That box is only about which way the sprites look; it does not change any hero v
   `-executeMethod Hollowknight.Silksong.Editor.HeroSceneBuilder.BuildBatch` before `-runTests`. Rebuild after ANY change to
   the builder or bootstrap (BuildBatch always rebuilds); the tests fail with "scene is older than ... rebuild" when stale, and
   with the import-and-build instruction when the scene is missing.
+
+## Smoothness and landing (task 13)
+
+- The scene turns on Rigidbody2D interpolation for the hero (`HeroSceneBootstrap.Start`), because physics steps at 50 Hz while the camera and the screen move every frame; without it the hero looks jittery when walking. The hero script itself keeps interpolation off so hand-stepped tests stay exact. Rebuild the scene after pulling this change (the test checks the scene is not older than the bootstrap).
+- Landing now plays the `Land` clip when the hero touches down standing still; running, jumping, dashing, attacking or being hit cuts it at once. See `07-hero-animation-mapping.md`.

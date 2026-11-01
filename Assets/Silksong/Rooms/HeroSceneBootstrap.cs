@@ -41,6 +41,17 @@ namespace Hollowknight.Silksong
 
         void Start()
         {
+            // The scene runs physics at 50 Hz but renders (and moves the camera in LateUpdate) every frame, so a body
+            // that only changes position on physics steps is drawn in uneven jumps against the smoothly moving
+            // camera: the hero looks jittery when walking. Interpolation draws it between its last two physics
+            // positions. It is set here, in Start, because HeroController.Awake sets None (kept so tests that step
+            // physics by hand stay exact) and this component's Awake runs before it. The camera reads the interpolated
+            // transform.position in LateUpdate, which is what we want.
+            if (hero != null)
+            {
+                var body = hero.GetComponent<Rigidbody2D>();
+                if (body != null) body.interpolation = RigidbodyInterpolation2D.Interpolate;
+            }
             if (hero == null || spawn == null || hero.Health == null) return;
             // Puts the hero on the marker, facing the marker's way, and makes it the marker a death returns to.
             hero.Health.RespawnAt(spawn);
