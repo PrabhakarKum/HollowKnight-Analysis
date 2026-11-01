@@ -72,6 +72,11 @@ namespace Hollowknight.Silksong.Tests
             yield return null;
             Assert.Less(hero.Move.x, 0f, "A alone");
             Release(keyboard.aKey);
+            // A frame between the two changes: in a [UnityTest] Set only queues events, and the
+            // delta event of a bit-addressed key (D) also carries the bytes before it. Queued
+            // together, D would write A back as still pressed.
+            yield return null;
+            Assert.AreEqual(0f, hero.Move.x, "A released");
 
             Press(keyboard.dKey);
             yield return null;
@@ -80,6 +85,44 @@ namespace Hollowknight.Silksong.Tests
             Press(keyboard.aKey);
             yield return null;
             Assert.AreEqual(0f, hero.Move.x);
+        }
+
+        [UnityTest]
+        public IEnumerator Move_DAlone_MovesRight()
+        {
+            var keyboard = InputSystem.AddDevice<Keyboard>();
+
+            Press(keyboard.dKey);
+            yield return null;
+
+            Assert.Greater(hero.Move.x, 0f);
+        }
+
+        [UnityTest]
+        public IEnumerator Move_ArrowKeys_MoveBothWays()
+        {
+            var keyboard = InputSystem.AddDevice<Keyboard>();
+
+            Press(keyboard.leftArrowKey);
+            yield return null;
+            Assert.Less(hero.Move.x, 0f, "left arrow");
+            Release(keyboard.leftArrowKey);
+            yield return null;
+
+            Press(keyboard.rightArrowKey);
+            yield return null;
+            Assert.Greater(hero.Move.x, 0f, "right arrow");
+        }
+
+        [UnityTest]
+        public IEnumerator Gamepad_DpadRight_MovesRight()
+        {
+            var gamepad = InputSystem.AddDevice<Gamepad>();
+
+            Press(gamepad.dpad.right);
+            yield return null;
+
+            Assert.Greater(hero.Move.x, 0f);
         }
 
         [UnityTest]
