@@ -47,14 +47,32 @@ namespace Hollowknight.Silksong
             // positions. It is set here, in Start, because HeroController.Awake sets None (kept so tests that step
             // physics by hand stay exact) and this component's Awake runs before it. The camera reads the interpolated
             // transform.position in LateUpdate, which is what we want.
-            if (hero != null)
+            if (hero == null) return;
+            body = hero.GetComponent<Rigidbody2D>();
+            if (hero.Health != null && spawn != null)
             {
-                var body = hero.GetComponent<Rigidbody2D>();
-                if (body != null) body.interpolation = RigidbodyInterpolation2D.Interpolate;
+                // Puts the hero on the marker, facing the marker's way, and makes it the marker a death returns to.
+                // Done BEFORE interpolation is turned on, so the very first frame is not an interpolated teleport.
+                hero.Health.RespawnAt(spawn);
+                // Later respawns (R key, death) teleport the body too: restart interpolation so the camera and
+                // sprite do not smear from the old spot to the new one.
+                hero.Health.Respawned += RestartInterpolation;
             }
-            if (hero == null || spawn == null || hero.Health == null) return;
-            // Puts the hero on the marker, facing the marker's way, and makes it the marker a death returns to.
-            hero.Health.RespawnAt(spawn);
+            if (body != null) body.interpolation = RigidbodyInterpolation2D.Interpolate;
+        }
+
+        Rigidbody2D body;
+
+        void RestartInterpolation()
+        {
+            if (body == null) return;
+            body.interpolation = RigidbodyInterpolation2D.None;
+            body.interpolation = RigidbodyInterpolation2D.Interpolate;
+        }
+
+        void OnDestroy()
+        {
+            if (hero != null && hero.Health != null) hero.Health.Respawned -= RestartInterpolation;
         }
 
         void Update()

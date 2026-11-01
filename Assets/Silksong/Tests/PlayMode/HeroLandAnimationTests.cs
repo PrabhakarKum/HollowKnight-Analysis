@@ -184,6 +184,10 @@ namespace Hollowknight.Silksong.Tests
             Step(1);
             Assert.AreEqual("Jump", anim.Current);
             input.JumpButton.Release();
+            Step(60); // up and back down to the floor: the second touchdown is a new Land, the cut one never resumes
+            Assert.AreEqual(2, landed, "test setup: the hero jumped and landed again");
+            Assert.AreEqual(2, anim.Log.FindAll(c => c == "Land").Count, "one Land per touchdown, none resumed mid-air");
+            Assert.AreEqual("Jump", anim.Log[anim.Log.IndexOf("Land") + 1], "the jump cut Land straight away");
         }
 
         [Test]
@@ -214,7 +218,8 @@ namespace Hollowknight.Silksong.Tests
             Step(2);
             Assert.AreEqual("Slash", anim.Current);
             anim.Finish();
-            Step(config.AttackActiveSeconds > 0 ? Mathf.CeilToInt(config.AttackActiveSeconds / dt) + 2 : 20);
+            Assert.Greater(config.AttackActiveSeconds, 0f, "test setup: the swing has a duration");
+            Step(Mathf.CeilToInt(config.AttackActiveSeconds / dt) + 2);
             Assert.AreEqual("Idle", anim.Current);
             Assert.AreEqual(1, anim.Log.FindAll(c => c == "Land").Count);
         }
@@ -261,8 +266,48 @@ namespace Hollowknight.Silksong.Tests
             int landsBefore = anim.Log.FindAll(c => c == "Land").Count;
             hero.Health.RespawnAt(marker);
             Step(30);
+            Assert.AreEqual(1, landed, "respawning onto the floor raises no new Landed");
             Assert.AreEqual(landsBefore, anim.Log.FindAll(c => c == "Land").Count, "respawning on the floor does not play Land");
             Assert.AreEqual("Idle", anim.Current);
+        }
+
+        [Test]
+        public void Respawn_AfterDeath_OnTheFloor_RaisesNoLanded_ButAFallFromAboveStillDoes()
+        {
+            BuildWorld(1.5f);
+            FallUntilLanded();
+            anim.Finish();
+            Step(5);
+            var src = new GameObject("HitSource");
+            spawned.Add(src);
+            src.transform.position = new Vector3(-2f, 0.5f, 0f);
+            Assert.IsTrue(hero.Health.TakeHit(new HitInstance { Damage = hero.Health.Health, Direction = AttackDirection.Normal, Source = src }));
+            Step(10);
+            var floorGo = new GameObject("FloorMarker");
+            spawned.Add(floorGo);
+            floorGo.transform.position = new Vector3(10f, HeroHalfHeight + 0.01f, 0f);
+            var floorMarker = floorGo.AddComponent<RespawnMarker>();
+            floorMarker.Configure("Floor", true);
+            hero.Health.RespawnAt(floorMarker);
+            Step(30);
+            Assert.AreEqual(1, landed, "no Landed for a respawn onto the floor, even after an earlier fall");
+            Assert.AreEqual(1, anim.Log.FindAll(c => c == "Land").Count);
+
+            // A respawn in the air is a real fall: it lands with Landed and Land.
+            var airGo = new GameObject("AirMarker");
+            spawned.Add(airGo);
+            airGo.transform.position = new Vector3(20f, 2f, 0f);
+            var airMarker = airGo.AddComponent<RespawnMarker>();
+            airMarker.Configure("Air", true);
+            hero.Health.RespawnAt(airMarker);
+            FallUntilLandedAgain(2);
+            Assert.AreEqual("Land", anim.Current);
+        }
+
+        void FallUntilLandedAgain(int expectedTotal)
+        {
+            for (int i = 0; i < 200 && landed < expectedTotal; i++) Step(1);
+            Assert.AreEqual(expectedTotal, landed);
         }
     }
 }

@@ -128,7 +128,13 @@ namespace Hollowknight.Silksong
             bufferArmed = false;
             bufferSurvivesRelease = false;
             coyoteArmed = false;
-            if (forgetGround) wasGrounded = false;
+            if (forgetGround)
+            {
+                wasGrounded = false;
+                // A respawn is a fresh start like the first spawn: Landed (and the Land clip) is earned again only
+                // after the hero has left the ground, so respawning onto the floor is silent.
+                everAirborne = false;
+            }
             airTime = 0f;
         }
 
@@ -216,9 +222,9 @@ namespace Hollowknight.Silksong
                         landing = true;
                         anim.Play("Land");
                     }
-                    else if (landing && anim.IsPlaying("Land")) { }
-                    else
+                    else if (!(landing && anim.IsPlaying("Land")))
                     {
+                        // Idle, unless our own Land is still running (then leave it alone until it finishes).
                         landing = false;
                         anim.Play("Idle");
                     }

@@ -297,10 +297,19 @@ namespace Hollowknight.Silksong.Tests
             SetField(boot, "hero", hero);
             SetField(boot, "actions", heroGo.GetComponent<HeroActions>());
             SetField(boot, "config", Track(ScriptableObject.CreateInstance<HeroConfig>()));
+            var markerGo = Track(new GameObject("Marker"));
+            var marker = markerGo.AddComponent<RespawnMarker>();
+            marker.Configure("InterpTest", true);
+            SetField(boot, "spawn", marker);
             bootGo.SetActive(true);
 
             yield return null; // Start runs after every Awake, so it has the last word over HeroController.Awake
-            Assert.AreEqual(RigidbodyInterpolation2D.Interpolate, heroGo.GetComponent<Rigidbody2D>().interpolation);
+            var body = heroGo.GetComponent<Rigidbody2D>();
+            Assert.AreEqual(RigidbodyInterpolation2D.Interpolate, body.interpolation, "after Start and the initial respawn");
+
+            // A later respawn (R key, death) restarts interpolation and leaves it on.
+            hero.Health.RespawnAt(marker);
+            Assert.AreEqual(RigidbodyInterpolation2D.Interpolate, body.interpolation, "after a later respawn");
         }
 
         // ---------- 3. animations (11b) ----------
