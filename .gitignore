@@ -131,3 +131,8 @@ InitTestScene*.unity*
 /Assets/Silksong/Imported/
 /Assets/Silksong/Imported.meta
 /.superpowers/
+
+# Task 11b: generated hero room scene. It references gitignored imported sprites/clips by GUID, so it is built locally
+# with Silksong > Build Hero Scene (see docs/study/09-hero-scene.md). The committed placeholder scene SilksongHero.unity is separate.
+/Assets/Scenes/SilksongHeroRoom.unity
+/Assets/Scenes/SilksongHeroRoom.unity.meta
