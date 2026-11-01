@@ -34,11 +34,11 @@ If the hero faces the wrong way when you turn, tick or untick "Art Faces Left" o
 | 10 | Needle down | In the air, hold S or Down arrow, press X. | Slash goes below the feet. |
 | 11 | Pogo | Jump over the floating dummy (right side of the room), hold Down and press X while above it. | Hero bounces upward off it (12 u/s for 0.25 s) and can do it again, so you can keep bouncing on it. |
 | 12 | Dummy reacts | Hit either red dummy with a side swing, then from above. | The dummy visibly reacts on every hit and never dies (it refills after each hit). Every hit registers, however many you land. |
-| 13 | Take damage | Walk onto the red spikes on the floor (about x = 33, between the pit and the shaft) or the red spikes in the pit. Or press H (a hit for 1 from the front). | Lose 1 health (of 5). Hero is pushed away from the spikes (15 u/s sideways, no upward push) and stunned for 0.2 s, then cannot be hurt again for 1 s. Standing on the spikes costs 1 health per second at most, never more than one per second. |
-| 14 | Die | Keep standing on the spikes until health is gone (5 hits), or press K (a hit for all remaining health). | The hero loses control and stays down (no input works), and cannot take further hits while dead. |
+| 13 | Take damage | Walk onto the red spikes on the floor (about x = 33, between the pit and the shaft) or the red spikes in the pit. Or press H (a hit for 1 from the front). Pressing H and then K within 1 s does nothing for the second key; wait until the 1 s protection ends. | Lose 1 health (of 5). Hero is pushed away from the spikes (15 u/s sideways, no upward push) and stunned for 0.2 s, then cannot be hurt again for 1 s. Standing on the spikes costs 1 health per second at most, never more than one per second. |
+| 14 | Die | Keep standing on the spikes until health is gone (5 hits), or press K (a hit for all remaining health). H or K does nothing for 1 s after any hit (invulnerability), so wait until it ends before pressing the next key. | The hero loses control and cannot take further hits while dead. About 1.6 s later it pops back up by itself on the start marker (item 15), so judge the death pose during that window; the pop-up is normal. |
 | 15 | Respawn | After dying, wait; or press R at any time. | About 1.6 s after dying the hero reappears on the green start marker with control and full health (5). R does the same instantly, even while alive. |
 
-The spikes and the H and K keys exist only in this test room. After the room builder changes you must rebuild the
+The real scene is `Assets/Scenes/SilksongHeroRoom.unity` (not the older `SilksongHero.unity`). The spikes and the H and K keys exist only in this test room. After the room builder changes you must rebuild the
 scene (menu **Silksong > Build Hero Scene**) to get them; an old built scene has no spikes and ignores H and K.
 Spikes hurt and knock back like any hit; the real game's "put the hero back on safe ground" after spikes is not built.
 

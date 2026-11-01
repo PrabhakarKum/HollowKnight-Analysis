@@ -21,26 +21,27 @@ namespace Hollowknight.Silksong
         public const int Damage = 1;
 
         readonly List<HeroHealth> inside = new List<HeroHealth>();
+        Collider2D zoneCollider;
+
+        // Heroes the zone currently believes are inside (for tests).
+        public int InsideCount => inside.Count;
 
         void Awake()
         {
+            zoneCollider = GetComponent<Collider2D>();
             Stubs.NotImplemented("Hero hazard respawn");
         }
 
-        void OnTriggerEnter2D(Collider2D other)
-        {
-            var health = other.GetComponentInParent<HeroHealth>();
-            if (health == null) return;
-            if (!inside.Contains(health)) inside.Add(health);
-            Hit(health);
-        }
+        void OnTriggerEnter2D(Collider2D other) => Touch(other);
 
-        void OnTriggerStay2D(Collider2D other)
+        void OnTriggerStay2D(Collider2D other) => Touch(other);
+
+        void Touch(Collider2D other)
         {
             var health = other.GetComponentInParent<HeroHealth>();
             if (health == null) return;
             if (!inside.Contains(health)) inside.Add(health);
-            Hit(health);
+            Hit(health, other);
         }
 
         void OnTriggerExit2D(Collider2D other)
@@ -61,15 +62,25 @@ namespace Hollowknight.Silksong
 
         public void Tick()
         {
+            if (zoneCollider == null) zoneCollider = GetComponent<Collider2D>();
             for (int i = inside.Count - 1; i >= 0; i--)
             {
-                if (inside[i] == null) { inside.RemoveAt(i); continue; }
-                Hit(inside[i]);
+                var health = inside[i];
+                var col = health != null ? health.GetComponent<Collider2D>() : null;
+                // Stale entry: the hero is gone, dead, or was moved out (a respawn teleports it before the exit
+                // event arrives). Only a hero that overlaps the zone right now may be hit.
+                if (health == null || col == null || health.IsDead || !zoneCollider.Distance(col).isOverlapped)
+                {
+                    inside.RemoveAt(i);
+                    continue;
+                }
+                Hit(health, col);
             }
         }
 
-        void Hit(HeroHealth health)
+        void Hit(HeroHealth health, Collider2D col)
         {
+            if (health.IsDead) return;
             // TakeHit refuses while invulnerable, stunned or dead.
             health.TakeHit(new HitInstance { Damage = Damage, Direction = AttackDirection.Normal, Source = gameObject });
         }

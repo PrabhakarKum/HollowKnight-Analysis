@@ -127,5 +127,22 @@ namespace Hollowknight.Silksong.Tests
             Assert.AreEqual(hero.Health.MaxHealth, hero.Health.Health);
             Assert.AreEqual(marker.transform.position.x, hero.transform.position.x, 0.5f);
         }
+
+        [Test]
+        public void HeroDiesInZone_RespawnsOutside_IsNotHitAtTheMarker()
+        {
+            // One health left, so the zone's first hit kills the hero while it is still listed inside.
+            hero.Health.Data.health = 1;
+            Step(2);
+            Assert.IsTrue(hero.Health.IsDead, "test setup: the zone killed the hero");
+
+            // The respawn teleports the hero far outside the zone; the zone's next check comes before any physics
+            // step could send the exit event.
+            hero.Health.RespawnAt(marker);
+            zone.Tick();
+
+            Assert.AreEqual(hero.Health.MaxHealth, hero.Health.Health, "a respawned hero must not be hurt at the marker");
+            Assert.AreEqual(0, zone.InsideCount, "stale entry pruned");
+        }
     }
 }
