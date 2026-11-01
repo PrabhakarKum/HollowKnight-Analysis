@@ -59,6 +59,7 @@ namespace Hollowknight.Silksong
                 // Another system owns the hero now; do not overwrite its state or velocity.
                 ResetAll();
                 endedByDamage = true;
+                prevWantsDown = HoldingDown();
                 return false;
             }
             endedByDamage = false;
@@ -72,6 +73,7 @@ namespace Hollowknight.Silksong
                 if (clinging)
                 {
                     StartWallJump(dt);
+                    prevWantsDown = HoldingDown();
                     return true;
                 }
                 // Touching a wall in the air without clinging can still wall jump in the original (chaining).
@@ -131,7 +133,8 @@ namespace Hollowknight.Silksong
                 }
                 if (riseActive)
                 {
-                    if (!input.Jump.IsPressed)
+                    bool minDone = riseElapsed + TimeEpsilon >= cfg.JumpHoldMinSeconds;
+                    if (!input.Jump.IsPressed && minDone)
                     {
                         vel.y = cfg.WallJumpSpeedY * cfg.JumpReleaseMultiplier;
                         riseActive = false;
@@ -159,6 +162,7 @@ namespace Hollowknight.Silksong
         internal void OnDashStep()
         {
             ResetAll();
+            prevWantsDown = HoldingDown();
             ProbeWall();
             int dir = owner.FacingRight ? 1 : -1;
             if (touchingSide == dir) Stubs.NotImplemented("Hero dash ends at wall");
@@ -242,6 +246,10 @@ namespace Hollowknight.Silksong
                 if (Mathf.Abs(hits[i].normal.x) >= MinWallNormalX) return true;
             return false;
         }
+
+        // Movement does not run on steps this component or the dash handles, so read the stick directly; a down
+        // press held through such a step must not look fresh afterwards.
+        bool HoldingDown() => owner.Input.Move.y < -owner.Config.VerticalPressThreshold;
 
         void ResetAll()
         {

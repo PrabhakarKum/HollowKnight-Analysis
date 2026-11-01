@@ -321,6 +321,7 @@ namespace Hollowknight.Silksong.Tests
             input.JumpButton.Release();
             Assert.IsTrue(hero.Dash.CanAirDash);
             // Still inside the old cooldown: the dash only works because the cooldown was cleared.
+            input.Move = Vector2.zero;
             input.DashButton.Press();
             Step(1);
             input.DashButton.Release();
@@ -347,6 +348,9 @@ namespace Hollowknight.Silksong.Tests
             SetState(HeroState.Hurt);
             Step(1);
             Assert.IsFalse(hero.Wall.IsClinging);
+            // HeroMovement still rewrites State every step (it does for the dash too), so Hurt itself cannot be
+            // asserted to survive here; a damage system must hold the state. What is checked: the wall did not re-assert
+            // WallClinging over it, and did not zero the sideways speed or cap the fall.
             Assert.AreNotEqual(HeroState.WallClinging, hero.State, "the cling must not re-assert itself over hurt");
             // The slide cap is no longer applied, so gravity keeps pulling past it.
             Assert.Less(hero.Velocity.y, -config.WallSlideSpeed - 0.5f);
@@ -362,7 +366,7 @@ namespace Hollowknight.Silksong.Tests
             input.JumpButton.Release();
             Assert.IsFalse(hero.Wall.IsClinging);
             Assert.IsFalse(hero.Wall.IsWallJumpLocked);
-            Assert.AreNotEqual(-config.WallJumpSpeedX, hero.Velocity.x, "no wall jump when dead");
+            Assert.Less(hero.Velocity.y, 0f, "keeps falling, no wall jump rise when dead");
         }
 
         [Test]

@@ -178,8 +178,8 @@ clears the dash cooldown.
 
 Rows marked DIFFERENT need the owner's decision: say "keep prototype" for a row to put the prototype value into
 `HeroConfig` instead. `HeroConfig` is a frozen contract, so rules that would need new fields are constants or stubs.
-Config fields used: `WallSlideSpeed`, `WallJumpSpeedX`, `WallJumpSpeedY`, `WallJumpLockSeconds` (values in the table
-above), plus `RunSpeed`, `JumpHoldMaxSeconds` and `JumpReleaseMultiplier`.
+Config fields used: `WallSlideSpeed`, `WallJumpSpeedX`, `WallJumpSpeedY`, `WallJumpLockSeconds` (Silksong-measured values: 6 PROVISIONAL, 25, 18.6 PROVISIONAL, 0.3 s; the prototype has 3.5, 12, no separate value (uses its jump speed 15) and 0.2 s)
+plus `RunSpeed` 8.25, `JumpHoldMaxSeconds` 0.18, `JumpHoldMinSeconds` 0.04 and `JumpReleaseMultiplier` 0.5 (all Silksong values from the table above).
 
 | # | Parameter or rule | Prototype | Silksong (source) | New hero uses | |
 |---|---|---|---|---|---|
@@ -198,7 +198,7 @@ above), plus `RunSpeed`, `JumpHoldMaxSeconds` and `JumpReleaseMultiplier`.
 | 13 | Kick-off decay | linear to run speed over the lock | linear to run speed over the long lock | same (using `RunSpeed`) | same |
 | 14 | Forced-push lock | 10 steps (0.2 s) | 15 steps (0.3 s, prefab `WJLOCK_STEPS_LONG`) | 0.3 s (`WallJumpLockSeconds`) | DIFFERENT |
 | 15 | Early end of the lock | none | input toward the wall after 5 steps (0.1 s, `WJLOCK_STEPS_SHORT`) ends it | not built, stub `Hero wall jump short lock` (logs input toward the wall during the lock) | DIFFERENT, deferred |
-| 16 | Wall jump rise | normal jump speed 15, can be cut after 1 step | sets the jumping state and calls the normal jump routine, which forces the jump speed (18.6) each step; it does not reset the step counter, so the rise length is unknown | `WallJumpSpeedY` 18.6 held for the jump hold time (0.18 s); an early release cuts it at once like a normal jump | DIFFERENT (speed follows Silksong's jump), length **PROVISIONAL** |
+| 16 | Wall jump rise | normal jump speed 15, can be cut after 1 step | sets the jumping state and calls the normal jump routine, which forces the jump speed (18.6) each step; it does not reset the step counter, so the rise length is unknown | `WallJumpSpeedY` 18.6 held for the jump hold time (0.18 s); an early release cuts it only after the minimum hold (0.04 s), like a normal jump | DIFFERENT (speed follows Silksong's jump), length **PROVISIONAL** |
 | 17 | Air dash refresh | resets on slide and on wall jump | resets the air-dash flag on slide start and on wall jump | resets on cling start and wall jump (`HeroDash.RefreshAirDash`, a minimal edit to HeroDash) | same |
 | 18 | Dash cooldown on slide | not cleared | cleared to 0 when the slide starts | cleared on cling start and wall jump | DIFFERENT |
 | 19 | Dash into a wall | ends the dash and starts a slide | the dash step starts a slide if possible | not built, stub `Hero dash ends at wall` (the dash runs its full time first, then the cling can start) | same, deferred |
