@@ -126,3 +126,8 @@ InitTestScene*.unity*
 # Generated enemy art: recoloured copies derived from the licensed DeadRevolver pack - regenerate with Hollowknight > Generate Enemy Variants
 /Assets/EnemyArt/
 /Assets/EnemyArt.meta
+
+# Silksong recreation: imported reference material and agent scratch
+/Assets/Silksong/Imported/
+/Assets/Silksong/Imported.meta
+/.superpowers/
