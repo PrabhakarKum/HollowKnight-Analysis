@@ -31,7 +31,7 @@ namespace Hollowknight.Silksong.Tests
         public void ScenePath_MatchesPlayModeTests_AndIsNotThePlaceholderScene()
         {
             // The PlayMode assembly cannot see the Editor one, so its copy of the path is checked in the source text.
-            StringAssert.Contains("\"" + HeroSceneBuilder.ScenePath + "\"", File.ReadAllText("Assets/Silksong/Tests/PlayMode/RoomSceneTests.cs"));
+            StringAssert.Contains("\"" + HeroSceneBuilder.ScenePath + "\"", File.ReadAllText(Path.Combine(Application.dataPath, "Silksong/Tests/PlayMode/RoomSceneTests.cs")));
             Assert.AreNotEqual(HeroTestSceneBuilder.DefaultScenePath, HeroSceneBuilder.ScenePath, "must not overwrite the committed placeholder scene");
         }
 
@@ -42,6 +42,33 @@ namespace Hollowknight.Silksong.Tests
             var ex = Assert.Throws<System.InvalidOperationException>(() => HeroSceneBuilder.Build(TempScene, true));
             StringAssert.Contains("Silksong/Import Hero Animations", ex.Message);
             Assert.IsFalse(File.Exists(TempScene));
+        }
+
+        // Needs no imported art, so the single-source rule is always checked: the bootstrap may serialize object
+        // references (the HeroConfig asset among them) and the one art-direction tick box, and nothing else, so it
+        // cannot carry a copied hero number.
+        [Test]
+        public void Bootstrap_SerializesOnlyReferences_NoCopiedHeroValues()
+        {
+            const System.Reflection.BindingFlags all = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic;
+            int configRefs = 0;
+            foreach (var fi in typeof(HeroSceneBootstrap).GetFields(all))
+            {
+                bool serialized = fi.IsPublic || fi.GetCustomAttributes(typeof(SerializeField), true).Length > 0;
+                if (!serialized || fi.IsNotSerialized) continue;
+                if (fi.FieldType == typeof(HeroConfig)) configRefs++;
+                if (fi.Name == "artFacesLeft") continue;
+                Assert.IsTrue(typeof(UnityEngine.Object).IsAssignableFrom(fi.FieldType), fi.Name + " is a value field (" + fi.FieldType.Name + "); the bootstrap must hold references only");
+            }
+            Assert.AreEqual(1, configRefs, "exactly one HeroConfig reference");
+        }
+
+        [Test]
+        public void ProjectHeroConfigAsset_ExistsOnce()
+        {
+            var guids = AssetDatabase.FindAssets("t:HeroConfig", new[] { "Assets" });
+            Assert.AreEqual(1, guids.Length, "one HeroConfig asset in the project");
+            Assert.AreEqual(HeroTestSceneBuilder.ConfigPath, AssetDatabase.GUIDToAssetPath(guids[0]));
         }
 
         [Test]

@@ -30,6 +30,10 @@ namespace Hollowknight.Silksong
     {
         public const string ImportFolder = "Assets/Silksong/Imported/HeroAnimations";
 
+        public static string ClipPath(string name) => ImportFolder + "/" + name + ".anim";
+        // The looping part of a LoopSection clip (see UnitySpriteAnimator.LoopSuffix).
+        public static string LoopClipPath(string name) => ImportFolder + "/" + name + " Loop.anim";
+
         // Played by the current hero code. All of these must exist as imported clips.
         public static readonly string[] PlayedByHeroCode =
         {

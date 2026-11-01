@@ -77,7 +77,7 @@ namespace Hollowknight.Silksong.Editor
             return missing;
         }
 
-        static string ClipPath(string name) => HeroClipNames.ImportFolder + "/" + name + ".anim";
+        static string ClipPath(string name) => HeroClipNames.ClipPath(name);
 
         public static string Build(string scenePath, bool discardOpenScenes)
         {
@@ -245,7 +245,7 @@ namespace Hollowknight.Silksong.Editor
                 foreach (var name in group)
                 {
                     clips.Add(RequireAsset<AnimationClip>(ClipPath(name)));
-                    var loopPart = AssetDatabase.LoadAssetAtPath<AnimationClip>(HeroClipNames.ImportFolder + "/" + name + UnitySpriteAnimator.LoopSuffix + ".anim");
+                    var loopPart = AssetDatabase.LoadAssetAtPath<AnimationClip>(HeroClipNames.LoopClipPath(name));
                     if (loopPart != null) clips.Add(loopPart);
                 }
             var so = new SerializedObject(animator);

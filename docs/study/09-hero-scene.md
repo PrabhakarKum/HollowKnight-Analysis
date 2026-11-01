@@ -44,5 +44,8 @@ That box is only about which way the sprites look; it does not change any hero v
 ## Tests
 
 - EditMode: `Hollowknight.Silksong.Tests.EditMode` -> `HeroSceneBuilderTests`.
-- PlayMode: `Hollowknight.Silksong.Tests.PlayMode` -> `RoomSceneTests`. They build the scene first if the file is
-  absent. If the animations are not imported they fail with the instruction to import first.
+- PlayMode: `Hollowknight.Silksong.Tests.PlayMode` -> `RoomSceneTests`. They do NOT build the scene (building needs edit
+  mode and hangs a batch run that goes on to play mode). Build it first: menu, or in batch
+  `-executeMethod Hollowknight.Silksong.Editor.HeroSceneBuilder.BuildBatch` before `-runTests`. Rebuild after ANY change to
+  the builder or bootstrap (BuildBatch always rebuilds); the tests fail with "scene is older than ... rebuild" when stale, and
+  with the import-and-build instruction when the scene is missing.

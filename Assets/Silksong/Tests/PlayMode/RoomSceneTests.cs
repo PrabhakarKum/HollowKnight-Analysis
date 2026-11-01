@@ -13,19 +13,25 @@ using UnityEngine.SceneManagement;
 namespace Hollowknight.Silksong.Tests
 {
     // Task 11 and 11b. The camera test uses a hero built from code. The scene and animation tests need the imported
-    // hero animations (menu Silksong/Import Hero Animations, run once). HeroSceneBuilder generates the scene; the
-    // prebuild step builds it before the run when the file is absent (scene building needs edit mode).
-    [PrebuildSetup(typeof(BuildHeroSceneIfAbsent))]
+    // hero animations and the generated scene. The tests never build it (building needs edit mode and hangs a batch run
+    // that then enters play mode); build it first with the menu or -executeMethod ...HeroSceneBuilder.BuildBatch.
     public class RoomSceneTests
     {
         // Same string as HeroSceneBuilder.ScenePath (an EditMode test checks they agree). Not SilksongHero.unity: that path is the
         // committed placeholder-art scene from HeroTestSceneBuilder.
         public const string ScenePath = "Assets/Scenes/SilksongHeroRoom.unity";
 
+        const string BuildHint = "Run Silksong/Import Hero Animations, then Silksong/Build Hero Scene (or -executeMethod Hollowknight.Silksong.Editor.HeroSceneBuilder.BuildBatch before -runTests).";
+
+        // Fails fast when the scene is absent or older than the code that builds it (rebuild after any builder change).
         static void RequireScene()
         {
 #if UNITY_EDITOR
-            Assert.IsTrue(File.Exists(ScenePath), ScenePath + " does not exist and could not be built. Hero animations are probably not imported: run the menu Silksong/Import Hero Animations, then Silksong/Build Hero Scene, then rerun.");
+            Assert.IsTrue(File.Exists(ScenePath), ScenePath + " does not exist. " + BuildHint);
+            var sceneTime = File.GetLastWriteTimeUtc(ScenePath);
+            foreach (var src in new[] { "Assets/Silksong/Editor/HeroSceneBuilder.cs", "Assets/Silksong/Rooms/HeroSceneBootstrap.cs" })
+                if (File.Exists(src))
+                    Assert.GreaterOrEqual(sceneTime, File.GetLastWriteTimeUtc(src), ScenePath + " is older than " + src + "; rebuild it. " + BuildHint);
 #endif
         }
 
@@ -227,6 +233,50 @@ namespace Hollowknight.Silksong.Tests
 #endif
         }
 
+        // ---------- sprite flip (needs no imported art) ----------
+
+        static void SetField(object target, string field, object value)
+        {
+            var fi = target.GetType().GetField(field, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            Assert.IsNotNull(fi, "bootstrap field " + field);
+            fi.SetValue(target, value);
+        }
+
+        [UnityTest]
+        public IEnumerator Bootstrap_FlipsSprite_FromFacing_AndArtDirection([Values(true, false)] bool artFacesLeft, [Values(true, false)] bool facingRight)
+        {
+            var heroGo = Track(new GameObject("Hero"));
+            heroGo.AddComponent<BoxCollider2D>();
+            var hero = heroGo.AddComponent<HeroController>();
+            heroGo.AddComponent<HeroActions>();
+            var visual = new GameObject("Visual").AddComponent<SpriteRenderer>();
+            visual.transform.SetParent(heroGo.transform, false);
+            var markerGo = Track(new GameObject("Marker"));
+            var marker = markerGo.AddComponent<RespawnMarker>();
+            marker.Configure("FlipTest", facingRight);
+
+            // Inactive while the private fields are filled, so Awake sees them.
+            var bootGo = Track(new GameObject("Bootstrap"));
+            bootGo.SetActive(false);
+            var boot = bootGo.AddComponent<HeroSceneBootstrap>();
+            SetField(boot, "hero", hero);
+            SetField(boot, "actions", heroGo.GetComponent<HeroActions>());
+            var config = Track(ScriptableObject.CreateInstance<HeroConfig>());
+            SetField(boot, "config", config);
+            SetField(boot, "visual", visual);
+            SetField(boot, "spawn", marker);
+            SetField(boot, "artFacesLeft", artFacesLeft);
+            bootGo.SetActive(true);
+
+            yield return null; // Start puts the hero on the marker (setting its facing); LateUpdate then flips
+            yield return null;
+
+            Assert.AreSame(config, hero.Config, "the bootstrap injects the very config object it references");
+            Assert.AreEqual(facingRight, hero.FacingRight, "marker sets the facing");
+            bool expectFlip = artFacesLeft ? facingRight : !facingRight;
+            Assert.AreEqual(expectFlip, visual.flipX, "artFacesLeft=" + artFacesLeft + " facingRight=" + facingRight);
+        }
+
         // ---------- 3. animations (11b) ----------
 
         [UnityTest]
@@ -240,7 +290,7 @@ namespace Hollowknight.Silksong.Tests
             var clips = new List<AnimationClip>();
             foreach (var name in names)
             {
-                string path = HeroClipNames.ImportFolder + "/" + name + ".anim";
+                string path = HeroClipNames.ClipPath(name);
                 var clip = AssetDatabase.LoadAssetAtPath<AnimationClip>(path);
                 Assert.IsNotNull(clip, "missing hero clip " + path);
                 Assert.AreEqual(name, clip.name, "clip is named after the animation hero code plays");
@@ -282,7 +332,7 @@ namespace Hollowknight.Silksong.Tests
             var loopParts = new List<string>();
             foreach (var name in names)
             {
-                var loop = AssetDatabase.LoadAssetAtPath<AnimationClip>(HeroClipNames.ImportFolder + "/" + name + UnitySpriteAnimator.LoopSuffix + ".anim");
+                var loop = AssetDatabase.LoadAssetAtPath<AnimationClip>(HeroClipNames.LoopClipPath(name));
                 if (loop == null) continue;
                 Assert.IsTrue(loop.isLooping, name + " loop part loops");
                 Assert.IsFalse(Clip(clips, name).isLooping, name + " intro plays once");
@@ -315,23 +365,5 @@ namespace Hollowknight.Silksong.Tests
 #if UNITY_EDITOR
         static AnimationClip Clip(List<AnimationClip> clips, string name) => clips.Find(c => c.name == name);
 #endif
-    }
-
-    // Runs in edit mode before the play-mode run. Builds the scene when absent; if the art is not imported it only logs
-    // (the tests then fail with the instruction to import first).
-    public class BuildHeroSceneIfAbsent : IPrebuildSetup
-    {
-        public void Setup()
-        {
-#if UNITY_EDITOR
-            var type = System.Type.GetType("Hollowknight.Silksong.Editor.HeroSceneBuilder, Hollowknight.Silksong.Editor");
-            if (type == null) { Debug.LogWarning("[RoomSceneTests] HeroSceneBuilder not found."); return; }
-            try { type.GetMethod("EnsureBuilt").Invoke(null, null); }
-            catch (System.Reflection.TargetInvocationException e)
-            {
-                Debug.LogWarning("[RoomSceneTests] Could not build the hero scene: " + e.InnerException?.Message);
-            }
-#endif
-        }
     }
 }

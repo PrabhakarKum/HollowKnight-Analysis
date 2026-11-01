@@ -44,8 +44,6 @@ namespace Hollowknight.Silksong
             if (hero == null || spawn == null || hero.Health == null) return;
             // Puts the hero on the marker, facing the marker's way, and makes it the marker a death returns to.
             hero.Health.RespawnAt(spawn);
-            var body = hero.GetComponent<Rigidbody2D>();
-            if (body != null) body.interpolation = RigidbodyInterpolation2D.Interpolate;
         }
 
         void Update()
