@@ -74,19 +74,13 @@ namespace Hollowknight.Silksong
         {
             if (!graph.IsValid() || finished) return;
 
-            double next = playable.GetTime() + Time.deltaTime;
-            bool loops = current.isLooping;
-            if (!loops && next >= current.length)
+            // Step normally first so events between the old time and the end still fire.
+            graph.Evaluate(Time.deltaTime);
+            if (!current.isLooping && playable.GetTime() >= current.length)
             {
-                // Clamp so the last frame stays on screen and events up to the end still fire.
-                playable.SetTime(current.length);
-                graph.Evaluate(0f);
                 finished = true;
                 Completed?.Invoke(current.name);
-                return;
             }
-            // Evaluate takes a delta, so seat the playable at the old time and step forward.
-            graph.Evaluate(Time.deltaTime);
         }
 
         // Target for AnimationEvents the converter adds to clips: function name "OnFrameEvent",
