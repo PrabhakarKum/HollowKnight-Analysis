@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.IO;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -16,6 +17,7 @@ namespace Hollowknight.Silksong.Tests
         HeroConfig config;
         FakeHeroInput input;
         HeroController hero;
+        string stubsPath;
 
         [SetUp]
         public void SetUp()
@@ -24,6 +26,10 @@ namespace Hollowknight.Silksong.Tests
             Physics2D.simulationMode = SimulationMode2D.Script;
             dt = 0.02f;
             config = ScriptableObject.CreateInstance<HeroConfig>();
+            // Stubs append to a doc in the editor; keep test runs out of the real docs/study/STUBS.md.
+            stubsPath = Path.Combine(Path.GetTempPath(), "dash-tests-stubs-" + System.Guid.NewGuid() + ".md");
+            Stubs.StubsDocPath = stubsPath;
+            Stubs.ResetForTests();
         }
 
         [TearDown]
@@ -37,6 +43,8 @@ namespace Hollowknight.Silksong.Tests
             finally
             {
                 Physics2D.simulationMode = savedMode;
+                Stubs.StubsDocPath = null;
+                if (File.Exists(stubsPath)) File.Delete(stubsPath);
             }
         }
 
@@ -163,9 +171,12 @@ namespace Hollowknight.Silksong.Tests
             int guard = 0;
             while (!hero.IsGrounded && guard++ < 1000) Step(1);
             Assert.IsTrue(hero.IsGrounded, "hero should land");
+            Assert.IsTrue(hero.Dash.CanAirDash, "the allowance is back the moment the hero lands");
             Step(CooldownSteps());
             input.JumpButton.Press();
-            Step(3);
+            Step(1);
+            input.JumpButton.Release();
+            Step(2);
             Assert.IsFalse(hero.IsGrounded);
             Assert.IsTrue(hero.Dash.CanAirDash, "landing refreshes the air dash");
             PressDash();
@@ -201,7 +212,7 @@ namespace Hollowknight.Silksong.Tests
             float at50 = DashDistanceAt(0.02f);
             float at100 = DashDistanceAt(0.01f);
             Assert.Greater(at50, 0f);
-            Assert.AreEqual(at50, at100, at50 * 0.05f);
+            Assert.AreEqual(at50, at100, at50 * 0.02f);
         }
 
         [Test]
@@ -240,6 +251,39 @@ namespace Hollowknight.Silksong.Tests
             Step(3);
             Assert.AreEqual(config.RunSpeed, hero.Velocity.x, 0.01f, "run control is back");
         }
+
+        [Test]
+        public void Dash_PressDuringDash_IsIgnored()
+        {
+            BuildWorld(0f);
+            Settle();
+            PressDash();
+            int stepsSoFar = 1;
+            // A second press in the middle of the dash must neither restart nor extend it.
+            PressDash();
+            stepsSoFar++;
+            int total = stepsSoFar + StepUntilDashEnds();
+            // Moving steps, plus the one step on which the dash hands back to movement.
+            int expected = Mathf.CeilToInt(config.DashSeconds / dt - 0.001f) + 1;
+            Assert.AreEqual(expected, total, "a press during the dash must not extend it");
+        }
+
+        [Test]
+        public void Dash_AirDownWithNoSideways_LogsStubAndDashesSideways()
+        {
+            BuildWorld(60f);
+            Step(2);
+            input.Move = new Vector2(0f, -1f);
+            PressDash();
+            Assert.AreEqual(HeroState.Dashing, hero.State);
+            Assert.AreEqual(config.DashSpeed, hero.Velocity.x, 0.01f, "falls back to a normal sideways dash");
+            Assert.AreEqual(0f, hero.Velocity.y, 0.001f);
+            CollectionAssert.Contains(new List<string>(Stubs.Reported), "Hero down dash");
+        }
+
+        // Hurt or Dead set mid-dash must end the dash instead of being overwritten (HeroDash.FixedStep). It is
+        // not tested here because HeroController.State has an internal setter and no damage API exists yet;
+        // Task 10 (damage) should add a test once hurt can be triggered through the real API.
 
         [Test]
         public void Dash_FacingDirectionFollowsRule()

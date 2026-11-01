@@ -30,8 +30,8 @@ namespace Hollowknight.Silksong
         bool airDashUsed;
 
         public bool IsDashing => dashing;
-        // Whether a dash begun in the air right now would be allowed by the allowance (cooldown not included).
-        public bool CanAirDash => !airDashUsed;
+        // Whether the air-dash allowance is available (cooldown not included); standing on the floor counts as refreshed.
+        public bool CanAirDash => !airDashUsed || (owner != null && owner.IsGrounded);
 
         public event Action Dashed;
 
@@ -49,14 +49,35 @@ namespace Hollowknight.Silksong
 
             if (cooldownRemaining > 0f) cooldownRemaining -= dt;
 
+            // Another system (damage, death) set the state since the last step: it wins, so the dash must
+            // not overwrite that state. The cooldown still runs on.
+            if (dashing && (owner.State == HeroState.Hurt || owner.State == HeroState.Dead))
+            {
+                dashing = false;
+                return false;
+            }
+
             // IsGrounded is the result of the last HeroMovement step; during a dash it stays as it was when
             // the dash began, which is fine because the allowance only needs to refresh once movement resumes.
             if (!dashing && owner.IsGrounded) airDashUsed = false;
 
+            // Clinging to a wall would also refresh the air dash in the original; the wall task does that.
+            if (!dashing && owner.State == HeroState.WallClinging) Stubs.NotImplemented("Hero dash wall refresh");
+
+            // Jumping while the cooldown runs would nearly clear it in the original.
+            if (!dashing && cooldownRemaining > TimeEpsilon && input.Jump.WasPressed)
+                Stubs.NotImplemented("Hero jump-shortened dash cooldown");
+
             if (!dashing)
             {
                 if (!input.Dash.WasPressed) return false;
-                if (!CanStart()) return false;
+                if (!CanStart())
+                {
+                    // The original remembers a refused press for a short while and fires it when possible.
+                    if (owner.State != HeroState.Hurt && owner.State != HeroState.Dead)
+                        Stubs.NotImplemented("Hero dash buffer");
+                    return false;
+                }
                 Begin(cfg, input);
             }
 
@@ -64,6 +85,8 @@ namespace Hollowknight.Silksong
             if (dashRemaining <= TimeEpsilon)
             {
                 dashing = false;
+                // Dash still held at the end rolls into a sprint in the original.
+                if (input.Dash.IsPressed) Stubs.NotImplemented("Hero sprint after dash");
                 return false;
             }
 
@@ -72,6 +95,15 @@ namespace Hollowknight.Silksong
             owner.State = HeroState.Dashing;
             owner.Animator?.Play("Dash");
             return true;
+        }
+
+        // A disabled hero must not come back mid-dash or with a stale cooldown or air-dash flag.
+        void OnDisable()
+        {
+            dashing = false;
+            dashRemaining = 0f;
+            cooldownRemaining = 0f;
+            airDashUsed = false;
         }
 
         bool CanStart()
