@@ -3,6 +3,7 @@
     "rootNamespace": "Hollowknight.Silksong.Tests",
     "references": [
         "Hollowknight.Silksong",
+        "Hollowknight.Silksong.Editor",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
     ],

@@ -1,0 +1,19 @@
+{
+    "name": "Hollowknight.Silksong.Editor",
+    "rootNamespace": "Hollowknight.Silksong.Editor",
+    "references": [
+        "Hollowknight.Silksong",
+        "Unity.InputSystem"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
