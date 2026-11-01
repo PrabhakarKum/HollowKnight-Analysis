@@ -14,7 +14,7 @@ namespace Hollowknight.Silksong
     //    of this airtime is unspent;
     //  - direction is the held left/right, otherwise the way the hero already faces;
     //  - the cooldown runs from the START of the dash;
-    //  - touching the floor refreshes the air dash.
+    //  - touching the floor, clinging to a wall or wall jumping refreshes the air dash (HeroWall calls RefreshAirDash).
     // All timers are seconds reduced by the step length, so the result does not depend on the physics rate.
     public class HeroDash : MonoBehaviour
     {
@@ -34,6 +34,14 @@ namespace Hollowknight.Silksong
         public bool CanAirDash => !airDashUsed || (owner != null && owner.IsGrounded);
 
         public event Action Dashed;
+
+        // Clinging to a wall or jumping off one gives the air dash back and clears the cooldown (the original
+        // does both). Called by HeroWall.
+        internal void RefreshAirDash()
+        {
+            airDashUsed = false;
+            cooldownRemaining = 0f;
+        }
 
         internal void Bind(HeroController controller)
         {
@@ -60,9 +68,6 @@ namespace Hollowknight.Silksong
             // IsGrounded is the result of the last HeroMovement step; during a dash it stays as it was when
             // the dash began, which is fine because the allowance only needs to refresh once movement resumes.
             if (!dashing && owner.IsGrounded) airDashUsed = false;
-
-            // Clinging to a wall would also refresh the air dash in the original; the wall task does that.
-            if (!dashing && owner.State == HeroState.WallClinging) Stubs.NotImplemented("Hero dash wall refresh");
 
             // Jumping while the cooldown runs would nearly clear it in the original.
             if (!dashing && cooldownRemaining > TimeEpsilon && input.Jump.WasPressed)

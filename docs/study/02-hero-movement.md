@@ -130,11 +130,11 @@ arrives while a dash is not yet possible is remembered briefly and fires when it
 | 8 | Direction | held left/right, else facing | held left/right (not both), else facing | same | same |
 | 9 | Vertical speed and gravity | speed forced to 0, gravity skipped | speed 0, body gravity switched off, restored at the end | speed 0 and gravity skipped; gravity resumes the step after the dash ends | same |
 | 10 | Air dashes per airtime | 1 | 1 (a flag set on an airborne dash) | 1 | same |
-| 11 | Refresh of the air dash | landing, wall slide, wall jump | landing, wall slide, jumping from floor or wall, several move resets | landing now; wall refresh when the wall task exists (stub) | same |
+| 11 | Refresh of the air dash | landing, wall slide, wall jump | landing, wall slide, jumping from floor or wall, several move resets | landing, cling and wall jump (Task 8 wired it) | same |
 | 12 | Can start | cooldown over and (grounded or air dash left or wall sliding) | same, plus not in hard landing, not already dashing, not hurt/dead, and the ability must be unlocked | cooldown over, grounded or air dash left, not hurt or dead | same (unlock check not built) |
 | 13 | Exit speed | run speed in the held direction, else zero | not set by the dash; the sprint machine takes over | movement resumes the same step (run speed if held, else stop) | **PROVISIONAL** |
 | 14 | Sprint after dash | rolls into a sprint if the dash button is still held | asks the sprint machine to try a sprint | not built, stub `Hero sprint after dash` (logs when Dash is still held at dash end) | DIFFERENT, deferred |
-| 15 | Wall contact while dashing | ends the dash and starts a wall slide | the per-step dash code starts a wall slide if one is possible | not built, stub `Hero dash wall refresh` (logs while clinging to a wall; the wall task does the real thing) | same |
+| 15 | Wall contact while dashing | ends the dash and starts a wall slide | the per-step dash code starts a wall slide if one is possible | not built, stub `Hero dash ends at wall` (see the Wall section) | same, deferred |
 | 16 | Down dash (in the air, down held, no sideways) | none | yes, straight down at fall speed, 0.25 s | not built; logs a stub and does a normal sideways dash | DIFFERENT, deferred |
 | 17 | Gamepad/keys buttons | shift, x, east, right trigger | the Dash action | the `IHeroInput.Dash` edge | n/a |
 
@@ -149,8 +149,81 @@ Time base: all new-hero timers are seconds reduced by the step length, so 50 and
 ### Not built here (stubs and follow-ups)
 
 Each logs once through `Stubs.NotImplemented`: `Hero dash buffer` (row 7, when a press is refused), `Hero
-jump-shortened dash cooldown` (row 6), `Hero sprint after dash` (row 14), `Hero dash wall refresh` (row 15) and
+jump-shortened dash cooldown` (row 6), `Hero sprint after dash` (row 14), `Hero dash ends at wall` (row 15) and
 `Hero down dash` (row 16). Still unbuilt without a stub: the "dash unlocked" check.
 
 Note for Task 10 (damage): the dash ends by itself if the hero state becomes Hurt or Dead between steps, rather than
 overwriting it. That path has no test yet because hurt cannot be set through a public API; add one with the damage task.
+
+## Wall
+
+Summary in my own words. Sources, all read only: the wall slide start, per-step slide, wall jump and forced-push code
+in `HeroController.cs` (`BeginWallSlide`, `DoWallJump`, `CanWallJump`, the wall-lock block of the fixed update and the
+slide velocity routine), the serialized numbers in `Hero_Hornet.prefab` (`WALLSLIDE_STICK_TIME` 0.15,
+`WALLSLIDE_ACCEL` -24, `WALL_STICKY_STEPS` 3, `WJ_KICKOFF_SPEED` 25, `WJLOCK_STEPS_SHORT` 5, `WJLOCK_STEPS_LONG` 15,
+`WJLOCK_CHAIN_STEPS` 10, `WALLJUMP_RAY_LENGTH` 0.6, `WALLCLING_DECEL` 80, `WALLCLING_COOLDOWN` 0.3), and the
+owner's prototype (`PlayerController2D.cs`, `PlayerTuning.cs`, `PlayerTuning.asset`; step counts converted at 0.02 s
+per step). The prototype was only read, never changed. Naming: the original calls this a "wall slide"; its "wall
+cling" is a separate slower hold that needs an equipped tool. The new hero's `WallClinging` state is the original's
+wall slide.
+
+How it plays: in the air, touching a wall and pressing toward it (and not rising) latches the hero onto the wall. It
+stops drifting sideways, faces the wall, and slides down. It stays latched even if the stick is released, until it
+holds away from the wall for a moment, presses down, loses the wall, lands, or jumps. A jump while latched kicks the
+hero off the wall at a high sideways speed that decays in a straight line to run speed over a short lock, during
+which sideways input is ignored, while the rise works like a normal jump. Latching on gives back the air dash and
+clears the dash cooldown.
+
+### Comparison: prototype vs Silksong vs the new hero
+
+Rows marked DIFFERENT need the owner's decision: say "keep prototype" for a row to put the prototype value into
+`HeroConfig` instead. `HeroConfig` is a frozen contract, so rules that would need new fields are constants or stubs.
+Config fields used: `WallSlideSpeed`, `WallJumpSpeedX`, `WallJumpSpeedY`, `WallJumpLockSeconds` (values in the table
+above), plus `RunSpeed`, `JumpHoldMaxSeconds` and `JumpReleaseMultiplier`.
+
+| # | Parameter or rule | Prototype | Silksong (source) | New hero uses | |
+|---|---|---|---|---|---|
+| 1 | Slide fall speed | max 3.5, gravity continues up to it | no fixed speed: after the stick delay it adds -24 u/s^2 per second (prefab `WALLSLIDE_ACCEL`); no cap was found in the slide routine | `WallSlideSpeed` 6 as a cap, gravity continues up to it | DIFFERENT, **PROVISIONAL** |
+| 2 | Stick delay at slide start | none | 0.15 s with vertical speed held at 0 (prefab `WALLSLIDE_STICK_TIME`) | not built, stub `Hero wall stick delay` | DIFFERENT, deferred |
+| 3 | Slide acceleration | none (cap only) | -24 u/s^2 after the delay | not built, stub `Hero wall slide acceleration` | DIFFERENT, deferred |
+| 4 | Start of the slide | airborne, wall on the pressed side, pressing toward it, vertical speed <= 0.01, not jumping, input not locked | touching a wall, pressing toward it, input allowed, airborne | same as the prototype (the vertical speed rule keeps a rising hero from latching) | same |
+| 5 | Staying on the wall | until holding away for 8 steps (0.16 s), losing the wall, landing or jumping | until holding away for 3 steps (0.06 s, prefab `WALL_STICKY_STEPS`), down pressed, wall lost, landing or jumping | 0.06 s (named constant, no config field) | DIFFERENT |
+| 6 | Down press lets go | no | yes, a fresh down press unless pressing toward the wall | yes | DIFFERENT |
+| 7 | Sideways speed while latched | zero | zero | zero | same |
+| 8 | Facing | faces the wall; faces away when letting go; faces away after a wall jump | same | same | same |
+| 9 | Wall detection distance | 0.08 | collision flags from the physics step | 0.02 (twice the contact offset, like the ground probe) | DIFFERENT |
+| 10 | Wall jump allowed | while latched, or within 5 steps (0.1 s) of leaving a wall | while latched, or touching a wall in the air during the chain window, or while the push lock still runs, or with a move input; also needs the ability unlocked | only while latched; chained or late wall jumps are not built, stub `Hero wall jump chain` logs a jump press near a wall while not latched | DIFFERENT, deferred |
+| 11 | Wall coyote | 5 steps | none found | none | DIFFERENT |
+| 12 | Kick-off speed | 12 | 25 (prefab `WJ_KICKOFF_SPEED`) | 25 (`WallJumpSpeedX`) | DIFFERENT |
+| 13 | Kick-off decay | linear to run speed over the lock | linear to run speed over the long lock | same (using `RunSpeed`) | same |
+| 14 | Forced-push lock | 10 steps (0.2 s) | 15 steps (0.3 s, prefab `WJLOCK_STEPS_LONG`) | 0.3 s (`WallJumpLockSeconds`) | DIFFERENT |
+| 15 | Early end of the lock | none | input toward the wall after 5 steps (0.1 s, `WJLOCK_STEPS_SHORT`) ends it | not built, stub `Hero wall jump short lock` (logs input toward the wall during the lock) | DIFFERENT, deferred |
+| 16 | Wall jump rise | normal jump speed 15, can be cut after 1 step | sets the jumping state and calls the normal jump routine, which forces the jump speed (18.6) each step; it does not reset the step counter, so the rise length is unknown | `WallJumpSpeedY` 18.6 held for the jump hold time (0.18 s); an early release cuts it at once like a normal jump | DIFFERENT (speed follows Silksong's jump), length **PROVISIONAL** |
+| 17 | Air dash refresh | resets on slide and on wall jump | resets the air-dash flag on slide start and on wall jump | resets on cling start and wall jump (`HeroDash.RefreshAirDash`, a minimal edit to HeroDash) | same |
+| 18 | Dash cooldown on slide | not cleared | cleared to 0 when the slide starts | cleared on cling start and wall jump | DIFFERENT |
+| 19 | Dash into a wall | ends the dash and starts a slide | the dash step starts a slide if possible | not built, stub `Hero dash ends at wall` (the dash runs its full time first, then the cling can start) | same, deferred |
+| 20 | Dash direction when latched | away from the wall | not read | held direction, else facing (which faces the wall) | DIFFERENT, **PROVISIONAL** |
+| 21 | Air jumps given back | on slide and wall jump | double jump flag cleared | no double jump built | n/a |
+| 22 | Attack while latched | a forward slash halves the slide speed (cap 5); an up slash pushes the hero off by 0.8 | an attack cancels the slide | not built; attacks are Task 9 | DIFFERENT, deferred |
+| 23 | Wall cling tool | none | separate state needing an equipped tool, decelerates at 80, 0.3 s cooldown | not built (no tool system) | DIFFERENT, deferred |
+| 24 | Surfaces that refuse a latch | none | non-slider surfaces and no-cling regions refuse it | not built (all solid walls count) | DIFFERENT, deferred |
+| 25 | Ability unlock | none | wall jump needs `hasWalljump` | not built (always on) | DIFFERENT, deferred |
+
+Count: 18 DIFFERENT rows (1, 2, 3, 5, 6, 9, 10, 11, 12, 14, 15, 16, 18, 20, 22, 23, 24, 25); 7 same or n/a (4, 7, 8,
+13, 17, 19, 21).
+Time base: every new-hero timer is seconds reduced by the step length, so 50 and 100 Hz agree.
+
+### PROVISIONAL (owner to confirm)
+
+1. WallSlideSpeed = 6 (row 1). The original has no fixed speed; the prototype caps at 3.5. Still a design choice.
+2. WallJumpSpeedY = 18.6 (row 16). The speed is now read: the original's wall jump uses the normal jump speed. How
+   long the rise is held after a wall jump could not be read, so the 0.18 s hold is assumed.
+3. Dash direction when latched (row 20): not read from the original.
+
+### Not built here (stubs and follow-ups)
+
+Each logs once through `Stubs.NotImplemented`: `Hero wall stick delay` (row 2), `Hero wall slide acceleration`
+(row 3), `Hero wall jump chain` (row 10), `Hero wall jump short lock` (row 15), `Hero dash ends at wall` (row 19).
+The earlier dash stub `Hero dash wall refresh` is gone: the refresh is real now. Still unbuilt without a stub because
+they need systems that do not exist yet: attack interaction (row 22, Task 9), wall cling tool (row 23), non-slider
+surfaces (row 24), the ability unlock (row 25).

@@ -46,11 +46,13 @@ namespace Hollowknight.Silksong
 
         public event Action Landed;
         public HeroDash Dash => dash;
+        public HeroWall Wall => wall;
 
         Rigidbody2D body;
         Collider2D bodyCollider;
         HeroMovement movement;
         HeroDash dash;
+        HeroWall wall;
         PhysicsMaterial2D runtimeMaterial;
 
         internal Rigidbody2D Body => body;
@@ -84,6 +86,9 @@ namespace Hollowknight.Silksong
             dash = GetComponent<HeroDash>();
             if (dash == null) dash = gameObject.AddComponent<HeroDash>();
             dash.Bind(this);
+            wall = GetComponent<HeroWall>();
+            if (wall == null) wall = gameObject.AddComponent<HeroWall>();
+            wall.Bind(this);
         }
 
         void FixedUpdate()
@@ -96,7 +101,13 @@ namespace Hollowknight.Silksong
         {
             if (Input == null || Config == null) return;
             // While dashing, the dash owns velocity and movement must not run (it would zero or overwrite it).
-            if (!dash.FixedStep(dt)) movement.FixedStep(dt);
+            if (dash.FixedStep(dt)) wall.OnDashStep();
+            else if (!wall.BeginStep(dt))
+            {
+                // A wall jump handles its own step; otherwise movement runs and the wall adjusts its result.
+                movement.FixedStep(dt);
+                wall.EndStep(dt);
+            }
 
             // Attack arrives in a later task; flag the press so the gap is visible.
             if (Input.Attack.WasPressed) Stubs.NotImplemented("Hero attack");
