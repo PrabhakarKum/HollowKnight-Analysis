@@ -31,9 +31,9 @@ Heights below are measured from the floor the hero stands on.
 - **Ledge** (x = 40): walk off and press jump a moment late. Coyote time (0.08 s) should still allow the jump; much later should not.
 - **Lower floor** (5 units down): fall and landing; the fall speed cap. The cliff back up is 5 units, so a full held jump should climb it.
 - **30 degree slope** and **45 degree slope** (each rises 5 units to a plateau level with the upper floor): walk up and down; stand still on them (the hero must not creep); jump on them.
-- **Low hop platform** (1.5 units): a quick tap should reach it.
-- **Full-jump platform** (5 units): needs a held jump; a tap must fall short.
-- **Too-high platform** (8 units): should be unreachable. By arithmetic a full jump rises about 6.2 units (3.35 while held plus 2.88 coasting); the panel's apex reading shows the real number.
+- **Low hop platform** (1.2 units): even the shortest tap (about 1.4 units of rise) should clear it.
+- **Full-jump platform** (5 units): needs a held jump; a tap (about 1.4 units) must fall short.
+- **Too-high platform** (8 units): should be unreachable. By arithmetic a full jump rises about 6.0 units with the code's per-step gravity; the panel's apex reading shows the real number.
 
 ## What to look for when judging feel
 
@@ -58,3 +58,11 @@ These five fields in `HeroConfig` were not confirmed from the original export an
 - The follow camera (`HeroTestCameraFollow`) is a placeholder; the real GameCamera comes in Task 11.
 - `HeroController` takes its config and input by code injection, so `HeroDebugHud` does the wiring in this scene.
 - Labels use the legacy `TextMesh`; if they render badly under the render pipeline, only the labels are affected.
+
+## What to ignore when judging feel
+
+- Slopes are rotated boxes that meet their plateau at a shared corner, so a tiny bump may be felt at the top seam. That is a property of this scratch geometry, not of the movement code.
+
+## Replace later
+
+`HeroDebugHud` injecting `Config` and `Input` into the hero is a scratch-scene shortcut. Task 11 (the real camera and room bootstrap) must replace it with a proper bootstrap. The HUD logs an error if its hero, actions or config reference is missing.

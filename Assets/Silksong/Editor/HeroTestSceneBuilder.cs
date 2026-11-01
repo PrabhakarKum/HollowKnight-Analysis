@@ -28,6 +28,9 @@ namespace Hollowknight.Silksong.Editor
         static Sprite whiteSprite;
         static Font labelFont;
 
+        // Test seam: lets a test simulate a missing font. Labels are cosmetic, so a missing font must never fail the build.
+        public static Func<Font> LabelFontProvider = ResolveLabelFont;
+
         [MenuItem("Hollowknight/Silksong/Build Hero Test Scene")]
         public static void BuildFromMenu()
         {
@@ -59,10 +62,14 @@ namespace Hollowknight.Silksong.Editor
             EnsureFolder(Path.GetDirectoryName(scenePath).Replace('\\', '/'));
             var config = EnsureConfig();
             whiteSprite = EnsureSprite();
-            labelFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            if (labelFont == null) throw new InvalidOperationException("Built-in label font LegacyRuntime.ttf not found");
+            labelFont = LabelFontProvider();
+            if (labelFont == null) Debug.LogWarning("[HeroTestSceneBuilder] No label font available; building the scene without labels.");
             var actionsAsset = AssetDatabase.LoadAssetAtPath<InputActionAsset>(InputActionsPath);
             if (actionsAsset == null) throw new InvalidOperationException("Missing " + InputActionsPath);
+
+            // A previous build may still be open (the menu opens it afterwards); saving over a loaded scene
+            // is unreliable, so unload it first.
+            CloseLoadedScene(scenePath);
 
             // Additive so the scene the user (or test runner) has open is never replaced; closed again below.
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
@@ -85,6 +92,29 @@ namespace Hollowknight.Silksong.Editor
         }
 
         // ---------- assets ----------
+
+        static Font ResolveLabelFont()
+        {
+            foreach (var name in new[] { "LegacyRuntime.ttf", "Arial.ttf" })
+            {
+                try { var f = Resources.GetBuiltinResource<Font>(name); if (f != null) return f; }
+                catch (Exception) { /* name not valid in this Unity version; try the next */ }
+            }
+            try { return Font.CreateDynamicFontFromOSFont("Arial", 16); }
+            catch (Exception) { return null; }
+        }
+
+        static void CloseLoadedScene(string scenePath)
+        {
+            for (int i = 0; i < SceneManager.sceneCount; i++)
+            {
+                var s = SceneManager.GetSceneAt(i);
+                if (s.path != scenePath) continue;
+                if (SceneManager.sceneCount == 1) EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+                else EditorSceneManager.CloseScene(s, true);
+                return;
+            }
+        }
 
         static void EnsureFolder(string folder)
         {
@@ -126,8 +156,15 @@ namespace Hollowknight.Silksong.Editor
             importer.filterMode = FilterMode.Point;
             importer.mipmapEnabled = false;
             importer.textureCompression = TextureImporterCompression.Uncompressed;
-            importer.SaveAndReimport();
-            return AssetDatabase.LoadAssetAtPath<Sprite>(SpritePath);
+            try { importer.SaveAndReimport(); }
+            catch (Exception e)
+            {
+                Debug.LogWarning("[HeroTestSceneBuilder] SaveAndReimport failed (" + e.Message + "); importing synchronously instead.");
+                AssetDatabase.ImportAsset(SpritePath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
+            }
+            var sprite = AssetDatabase.LoadAssetAtPath<Sprite>(SpritePath);
+            if (sprite == null) throw new InvalidOperationException("Could not import placeholder sprite " + SpritePath);
+            return sprite;
         }
 
         // ---------- world ----------
@@ -163,7 +200,7 @@ namespace Hollowknight.Silksong.Editor
             Label(labels, "45 DEG SLOPE\n(steeper ramp)", new Vector3(83f, 2.5f));
 
             // Reference jump heights, measured above the lower floor.
-            Platform(world, labels, "PlatformLowHop", 100f, 1.5f, platformColor, "LOW HOP\n1.5 u: a tap reaches it");
+            Platform(world, labels, "PlatformLowHop", 100f, 1.2f, platformColor, "LOW HOP\n1.2 u: even a minimum tap clears it");
             Platform(world, labels, "PlatformFullJump", 110f, 5f, platformColor, "FULL JUMP\n5 u: needs a held jump");
             Platform(world, labels, "PlatformTooHigh", 120f, 8f, platformColor, "TOO HIGH\n8 u: should be unreachable");
         }
@@ -226,6 +263,7 @@ namespace Hollowknight.Silksong.Editor
 
         static void Label(Transform parent, string text, Vector3 position)
         {
+            if (labelFont == null) return;
             var go = new GameObject("Label");
             go.transform.SetParent(parent, false);
             go.transform.position = position;

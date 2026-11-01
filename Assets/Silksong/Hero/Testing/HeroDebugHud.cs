@@ -24,9 +24,16 @@ namespace Hollowknight.Silksong
         bool wasGrounded = true;
         GUIStyle style;
 
-        void Awake()
+        void Awake() => Wire();
+
+        // Public so an EditMode test can check the wiring without entering play mode.
+        public void Wire()
         {
-            if (hero == null) return;
+            if (hero == null || config == null || actions == null)
+            {
+                Debug.LogError("HeroDebugHud: hero, actions or config is not assigned; the hero will not move. Rebuild the scene with Hollowknight > Silksong > Build Hero Test Scene.", this);
+                return;
+            }
             hero.Config = config;
             hero.Input = actions;
             startPosition = hero.transform.position;
@@ -96,8 +103,11 @@ namespace Hollowknight.Silksong
                     $"Coyote {config.CoyoteSeconds}s  JumpBuffer {config.JumpBufferSeconds}s";
             }
 
-            GUI.Box(new Rect(8, 8, 520, 250), GUIContent.none);
-            GUI.Label(new Rect(16, 12, 504, 244), text, style);
+            // Clamped so the panel never spills out of a small game window.
+            float w = Mathf.Min(520f, Screen.width - 16f);
+            float h = Mathf.Min(250f, Screen.height - 16f);
+            GUI.Box(new Rect(8, 8, w, h), GUIContent.none);
+            GUI.Label(new Rect(16, 12, w - 16, h - 12), text, style);
         }
     }
 }

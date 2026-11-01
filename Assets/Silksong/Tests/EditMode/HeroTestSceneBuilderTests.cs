@@ -114,5 +114,79 @@ namespace Hollowknight.Silksong.Tests
             CollectionAssert.AreEqual(before, File.ReadAllBytes(SampleScenePath), "SampleScene content unchanged");
             Assert.AreEqual(timeBefore, File.GetLastWriteTimeUtc(SampleScenePath), "SampleScene not rewritten");
         }
+
+        [Test]
+        public void Build_SucceedsWhenLabelFontIsUnavailable()
+        {
+            var original = HeroTestSceneBuilder.LabelFontProvider;
+            HeroTestSceneBuilder.LabelFontProvider = () => null;
+            try
+            {
+                UnityEngine.TestTools.LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex("No label font"));
+                HeroTestSceneBuilder.Build(TempScene);
+            }
+            finally { HeroTestSceneBuilder.LabelFontProvider = original; }
+
+            var scene = OpenAdditive(TempScene);
+            try
+            {
+                Assert.AreEqual(1, All<HeroController>(scene).Length, "scene still has the hero");
+                Assert.AreEqual(0, All<TextMesh>(scene).Length, "no labels without a font");
+            }
+            finally { EditorSceneManager.CloseScene(scene, true); }
+        }
+
+        [Test]
+        public void Build_IsRepeatableWhileTheSceneIsOpen()
+        {
+            HeroTestSceneBuilder.Build(TempScene);
+            var open = OpenAdditive(TempScene);
+            int objects = CountObjects(open);
+
+            // The menu leaves the built scene open, so a rebuild must cope with it being loaded.
+            HeroTestSceneBuilder.Build(TempScene);
+
+            var again = OpenAdditive(TempScene);
+            try
+            {
+                Assert.AreEqual(objects, CountObjects(again));
+                Assert.AreEqual(1, All<HeroController>(again).Length);
+                int loadedCopies = 0;
+                for (int i = 0; i < SceneManager.sceneCount; i++)
+                    if (SceneManager.GetSceneAt(i).path == TempScene) loadedCopies++;
+                Assert.AreEqual(1, loadedCopies);
+            }
+            finally { EditorSceneManager.CloseScene(again, true); }
+        }
+
+        [Test]
+        public void HeroDebugHud_Wire_SetsConfigAndInput()
+        {
+            var heroGo = new GameObject("Hero", typeof(Rigidbody2D), typeof(CapsuleCollider2D));
+            var hudGo = new GameObject("Hud");
+            var config = ScriptableObject.CreateInstance<HeroConfig>();
+            try
+            {
+                var hero = heroGo.AddComponent<HeroController>();
+                var actions = heroGo.AddComponent<HeroActions>();
+                var hud = hudGo.AddComponent<HeroDebugHud>();
+                var so = new SerializedObject(hud);
+                so.FindProperty("hero").objectReferenceValue = hero;
+                so.FindProperty("actions").objectReferenceValue = actions;
+                so.FindProperty("config").objectReferenceValue = config;
+                so.ApplyModifiedPropertiesWithoutUndo();
+
+                hud.Wire();
+
+                Assert.AreSame(config, hero.Config);
+                Assert.AreSame(actions, hero.Input);
+            }
+            finally
+            {
+                Object.DestroyImmediate(heroGo);
+                Object.DestroyImmediate(hudGo);
+                Object.DestroyImmediate(config);
+            }
+        }
     }
 }
