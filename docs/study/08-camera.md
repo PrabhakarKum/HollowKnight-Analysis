@@ -84,8 +84,12 @@ URP only: the component has no image effects and needs none; the original camera
 | 27 | Post effects | none | bloom, colour correction, noise (built-in image effects) | stub (URP volume later) | yes |
 | 28 | Update timing | LateUpdate, `deltaTime` | per frame, `deltaTime`, frozen at time scale 0 | LateUpdate, `deltaTime`, frozen at time scale 0 | no |
 | 29 | Smoothing maths | `SmoothDamp` | `SmoothDamp` | closed-form equivalent (exact at any step rate) | no |
+| 30 | Snap to the hero on entering a room | `SnapToTarget` on start or new target, no wait | `PositionToHero`: wait one physics step, then move instantly, clamped to the new room | instant (`SnapTo`), no physics-step wait (caller waits) | yes |
+| 31 | Hold after the snap | none | frozen 0.1 s, velocity zeroed, then follows | 0.1 s (`EntryHoldSeconds`), then follows | yes |
+| 32 | Edge nudge on entry | none | branch exists (camera x = hero x +-1 at a side edge facing inward) but it tests the same unclamped x the clamp used, so it is dead without a lock-area offset | not built: lands on the clamped position | no |
+| 33 | Freeze while leaving a room | none | `FreezeInPlace` while fading out | `Freeze` / `Unfreeze` | yes |
 
-**Differences between prototype and Silksong: 23 of 29 rows** (rows 1, 2, 3, 6 to 24 and 27). The 6 rows that match are 4, 5, 25, 26, 28, 29. GameCamera follows the Silksong column everywhere it is implemented; the prototype was not edited.
+**Differences between prototype and Silksong: 26 of 33 rows** (rows 1, 2, 3, 6 to 24, 27, 30, 31 and 33). The 7 rows that match are 4, 5, 25, 26, 28, 29, 32. GameCamera follows the Silksong column everywhere it is implemented; the prototype was not edited.
 
 ## PROVISIONAL
 
@@ -112,3 +116,21 @@ The animation converter's only stub is the RandomFrame/RandomLoop wrap mode (see
 ## Note for Task 11b
 
 `HeroController.Config` is not serialized and is only injected by `HeroDebugHud` in the scratch scene. The real scene needs a bootstrap that sets it from the one `HeroConfig.asset` (same reference). `HeroConfigConsistency.AssertSceneUsesProjectConfig` always hard-fails on a copy or a second config; value drift on measured fields hard-fails and on PROVISIONAL / owner-tuned fields only logs a warning.
+
+## Entry snap (Milestone 2, Task 5)
+
+Files: `Rooms/GameCamera.cs` (additions), `Rooms/RoomInfo.cs`. Tests: `Tests/PlayMode/GameCameraEntryTests.cs`.
+
+In my own words, what the original does when the hero arrives in a new room (`CameraController.PositionToHero`): it waits one physics step, learns the new room size, puts the camera on the hero at once (clamped to the room), zeroes its speed, stays frozen for 0.1 s, then goes back to following. The code also has a branch that, at a left or right room edge with the hero facing inward, would put the camera at the hero's x plus or minus 1 instead. It only runs when the unclamped target x is not on a side limit, but the edge test is made on the clamped x of that same target, so whenever the clamp moved it the branch is skipped. In normal play it is dead; only a lock-area offset could reach it. On leaving, `FreezeInPlace` holds the camera while the screen fades.
+
+What `GameCamera` has now:
+
+- `Bounds` (setter) or `EnterRoom(RoomInfo)` swaps the room. Old follow speed is dropped and the follow target is re-clamped, so nothing overshoots into the new room. A null or destroyed room means no limits.
+- `SnapTo(position[, facingRight])` jumps to that hero position inside the current bounds with the look-ahead already facing the hero's way, no smoothing, then holds for `GameCameraSettings.EntryHoldSeconds` (0.1). `IsHolding` is true meanwhile; `PositionedAtHero` fires when the hold ends. The position is passed in because the hero object may not be moved yet.
+- No edge nudge: at a side edge the camera lands on the clamped position whichever way the hero faces (tests pin this). Calling `SnapTo` again during a hold restarts the hold; calling it while frozen unfreezes.
+- `Freeze()` / `Unfreeze()` hold the camera in place while leaving.
+- The hold time is in `GameCameraSettings`; HeroConfig is untouched and a test checks it has no field by that name.
+
+`RoomInfo` is a small per-room component: scene name, map zone id and name (Tut rooms: 13, "Moss Cave") and the `RoomBounds` reference. Camera numbers are not per room.
+
+Stubs: entry snap ignores lock areas (including the lock-area offset that is the only way to reach the original's inward nudge) and does not wait a physics step; RoomInfo look-and-feel (colours, light, audio, wind, darkness, border walls).
