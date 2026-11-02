@@ -48,7 +48,7 @@ namespace Hollowknight.Silksong
         enum Phase { None, Leaving, Waiting, WalkingIn, Dropping, Thrown }
 
         // Buttons stay up; only Move is scripted.
-        sealed class ScriptedInput : IHeroInput
+        sealed class ScriptedHeroInput : IHeroInput
         {
             public Vector2 Move { get; set; }
             public InputButton Jump => default;
@@ -56,7 +56,7 @@ namespace Hollowknight.Silksong
             public InputButton Attack => default;
         }
 
-        readonly ScriptedInput scripted = new ScriptedInput();
+        readonly ScriptedHeroInput scripted = new ScriptedHeroInput();
         readonly RaycastHit2D[] hits = new RaycastHit2D[8];
         readonly Collider2D[] overlaps = new Collider2D[4];
         float leaveElapsed;

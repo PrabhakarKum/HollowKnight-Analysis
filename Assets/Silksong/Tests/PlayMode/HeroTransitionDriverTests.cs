@@ -98,6 +98,15 @@ namespace Hollowknight.Silksong.Tests
             }
         }
 
+        // FacingRight has an internal setter, so turn the hero the way a player does: one step of stick input, then let go.
+        void Face(bool right)
+        {
+            input.Move = new Vector2(right ? 1f : -1f, 0f);
+            Step(1);
+            input.Move = Vector2.zero;
+            Step(1);
+        }
+
         int Steps(float seconds) => Mathf.RoundToInt(seconds / dt);
 
         void Settle()
@@ -215,9 +224,9 @@ namespace Hollowknight.Silksong.Tests
         {
             BuildWorld();
             Settle();
-            hero.FacingRight = true;
+            Face(true);
             Assert.IsTrue(driver.GetTransitionState().FacingRight);
-            hero.FacingRight = false;
+            Face(false);
             Assert.IsFalse(driver.GetTransitionState().FacingRight);
             Assert.IsFalse(driver.GetTransitionState().Busy);
             driver.LeaveRoom(GatePosition.Left);
@@ -237,8 +246,8 @@ namespace Hollowknight.Silksong.Tests
             Settle();
             var gate = MakeGate("left1", new Vector2(10f, 4f), new Vector2(1f, 0f));
 
+            Face(false);
             driver.LeaveRoom(GatePosition.Right);
-            hero.FacingRight = false;
             StartEntering(gate);
 
             Assert.AreEqual(11f, hero.transform.position.x, 0.001f, "gate x plus entry offset");
@@ -373,7 +382,7 @@ namespace Hollowknight.Silksong.Tests
             BuildWorld();
             Settle();
             var gate = MakeGate("bot1", new Vector2(3f, 1f), Vector2.zero);
-            hero.FacingRight = true;
+            Face(true);
             StartEntering(gate);
 
             Assert.AreEqual(1f + config.TransitionBottomLift, hero.transform.position.y, 0.001f);
@@ -554,7 +563,7 @@ namespace Hollowknight.Silksong.Tests
             BuildWorld();
             Settle();
             // No floor under the arrival spot, a wall just to its right (face at x = 6).
-            spawned[0].GetComponent<BoxCollider2D>().enabled = false;
+            ((GameObject)spawned[0]).GetComponent<BoxCollider2D>().enabled = false;
             var wall = new GameObject("Wall");
             spawned.Add(wall);
             wall.AddComponent<BoxCollider2D>().size = new Vector2(1f, 400f);
