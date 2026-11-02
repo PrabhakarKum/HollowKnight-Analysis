@@ -22,6 +22,9 @@ namespace Hollowknight.Silksong
 
         // Added after version 1 shipped. JsonUtility leaves keys missing from an old file at these initialisers,
         // so old saves load unchanged and no version bump is needed.
+        // ASSUMPTION (controller decision): this is a private dev project with no shipped v1 saves, so
+        // CurrentVersion stays 1. A release with v1 saves in the wild should bump deliberately.
+        // mapZone is a map-zone label, not compared to scene names; respawnScene is a scene name such as "Tut_01".
         public string mapZone = "TUT_01";
         public HazardRespawn hazardRespawn = new HazardRespawn();
         public SceneData sceneData = new SceneData();

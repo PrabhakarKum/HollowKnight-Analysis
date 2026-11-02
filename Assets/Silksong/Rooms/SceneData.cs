@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using UnityEngine;
 
 namespace Hollowknight.Silksong
 {
@@ -7,7 +8,7 @@ namespace Hollowknight.Silksong
     // name + item id. Stored as flat lists because JsonUtility cannot serialise dictionaries; lookups go through
     // an index built lazily after loading. Plain C#, so it is testable without a scene.
     [Serializable]
-    public class SceneData
+    public class SceneData : ISerializationCallbackReceiver
     {
         [Serializable]
         public class BoolEntry { public string scene; public string id; public bool value; }
@@ -15,14 +16,29 @@ namespace Hollowknight.Silksong
         [Serializable]
         public class IntEntry { public string scene; public string id; public int value; }
 
+        // Serialisation only: mutate through Set*, never by editing these lists, or the lookup index goes stale
+        // (call Invalidate() if you must).
         public List<BoolEntry> bools = new List<BoolEntry>();
         public List<IntEntry> ints = new List<IntEntry>();
 
         [NonSerialized] Dictionary<string, BoolEntry> boolIndex;
         [NonSerialized] Dictionary<string, IntEntry> intIndex;
 
-        // A newline cannot appear in a scene name, so ("a","b c") and ("a b","c") stay distinct.
-        static string Key(string scene, string id) => scene + "\n" + id;
+        // Length-prefixing the scene keeps the key unambiguous for any characters, including a separator
+        // sitting next to the join (("a\n","b") vs ("a","\nb")).
+        static string Key(string scene, string id) => (scene == null ? 0 : scene.Length) + ":" + scene + id;
+
+        // Drops the lookup index so it is rebuilt from the lists on next use.
+        public void Invalidate()
+        {
+            boolIndex = null;
+            intIndex = null;
+        }
+
+        public void OnBeforeSerialize() { }
+
+        // FromJsonOverwrite replaces the lists under an already-built index; rebuild it.
+        public void OnAfterDeserialize() => Invalidate();
 
         public bool HasBool(string scene, string id) => BoolIndex().ContainsKey(Key(scene, id));
 

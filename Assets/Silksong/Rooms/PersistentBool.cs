@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace Hollowknight.Silksong
@@ -8,6 +9,12 @@ namespace Hollowknight.Silksong
     public class PersistentBool : MonoBehaviour
     {
         [SerializeField] string itemId;
+
+        // Semi-persistent items (reset on bench rest) are not built; this flag only records the request.
+        [SerializeField] bool semiPersistent;
+
+        // Which live PersistentBool first claimed each scene+id, to warn when two share an id (they would overwrite each other).
+        static readonly Dictionary<string, PersistentBool> Owners = new Dictionary<string, PersistentBool>();
 
         SceneData data;
         string sceneName;
@@ -26,7 +33,20 @@ namespace Hollowknight.Silksong
 
         public void Save()
         {
-            if (data != null) data.SetBool(sceneName, ItemId, Value);
+            if (data == null) return;
+            if (semiPersistent) Stubs.NotImplemented("PersistentBool.SemiPersistent");
+            WarnIfIdShared();
+            data.SetBool(sceneName, ItemId, Value);
+        }
+
+        void WarnIfIdShared()
+        {
+            string key = sceneName + "\n" + ItemId;
+            PersistentBool owner;
+            if (Owners.TryGetValue(key, out owner) && owner != null && owner != this)
+                Debug.LogWarning("[PersistentBool] '" + ItemId + "' in scene '" + sceneName + "' is used by two objects; their saved state will overwrite each other.", this);
+            else
+                Owners[key] = this;
         }
 
         // Leaves Value alone when nothing was ever saved, so the object keeps its authored state.

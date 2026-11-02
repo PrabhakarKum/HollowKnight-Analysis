@@ -22,7 +22,7 @@ namespace Hollowknight.Silksong
             this.facingRight = facingRight;
         }
 
-        // An empty name means no hazard spot has been recorded.
+        // Based on markerName alone: an empty or null name means not set, whatever position holds.
         public bool IsSet => !string.IsNullOrEmpty(markerName);
     }
 }
