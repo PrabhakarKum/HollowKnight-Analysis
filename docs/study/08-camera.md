@@ -84,8 +84,12 @@ URP only: the component has no image effects and needs none; the original camera
 | 27 | Post effects | none | bloom, colour correction, noise (built-in image effects) | stub (URP volume later) | yes |
 | 28 | Update timing | LateUpdate, `deltaTime` | per frame, `deltaTime`, frozen at time scale 0 | LateUpdate, `deltaTime`, frozen at time scale 0 | no |
 | 29 | Smoothing maths | `SmoothDamp` | `SmoothDamp` | closed-form equivalent (exact at any step rate) | no |
+| 30 | Snap to the hero on entering a room | `SnapToTarget` on start or new target, no wait | `PositionToHero`: wait one physics step, then move instantly, clamped to the new room | instant (`SnapTo`), no physics-step wait (caller waits) | no |
+| 31 | Hold after the snap | none | frozen 0.1 s, velocity zeroed, then follows | 0.1 s (`EntryHoldSeconds`), then follows | yes |
+| 32 | Edge nudge on entry | none | at a left/right room edge facing inward: camera x = hero x +-1 (not clamped) | same (`EntryNudgeUnits`) | yes |
+| 33 | Freeze while leaving a room | none | `FreezeInPlace` while fading out | `Freeze` / `Unfreeze` | yes |
 
-**Differences between prototype and Silksong: 23 of 29 rows** (rows 1, 2, 3, 6 to 24 and 27). The 6 rows that match are 4, 5, 25, 26, 28, 29. GameCamera follows the Silksong column everywhere it is implemented; the prototype was not edited.
+**Differences between prototype and Silksong: 26 of 33 rows** (rows 1, 2, 3, 6 to 24, 27 and 31 to 33). The 7 rows that match are 4, 5, 25, 26, 28, 29, 30. GameCamera follows the Silksong column everywhere it is implemented; the prototype was not edited.
 
 ## PROVISIONAL
 
@@ -112,3 +116,21 @@ The animation converter's only stub is the RandomFrame/RandomLoop wrap mode (see
 ## Note for Task 11b
 
 `HeroController.Config` is not serialized and is only injected by `HeroDebugHud` in the scratch scene. The real scene needs a bootstrap that sets it from the one `HeroConfig.asset` (same reference). `HeroConfigConsistency.AssertSceneUsesProjectConfig` always hard-fails on a copy or a second config; value drift on measured fields hard-fails and on PROVISIONAL / owner-tuned fields only logs a warning.
+
+## Entry snap (Milestone 2, Task 5)
+
+Files: `Rooms/GameCamera.cs` (additions), `Rooms/RoomInfo.cs`. Tests: `Tests/PlayMode/GameCameraEntryTests.cs`.
+
+In my own words, what the original does when the hero arrives in a new room (`CameraController.PositionToHero`): it waits one physics step, learns the new room size, puts the camera on the hero at once (clamped to the room), zeroes its speed, stays frozen for 0.1 s, then goes back to following. If that clamped position sits on a left or right room edge and the hero faces inward, the camera is put at the hero's x plus or minus 1 instead, so the hero is not jammed against the wall. On leaving, `FreezeInPlace` holds the camera while the screen fades.
+
+What `GameCamera` has now:
+
+- `Bounds` (setter) or `EnterRoom(RoomInfo)` swaps the room. Old follow speed is dropped and the follow target is re-clamped, so nothing overshoots into the new room. A null or destroyed room means no limits.
+- `SnapTo(position[, facingRight])` jumps to that hero position inside the current bounds with the look-ahead already facing the hero's way, no smoothing, then holds for `GameCameraSettings.EntryHoldSeconds` (0.1). `IsHolding` / `IsPositioning` are true meanwhile; `PositionedAtHero` fires when the hold ends. The position is passed in because the hero object may not be moved yet.
+- Edge nudge: `EntryNudgeUnits` (1) when at a side edge facing inward. The ordinary room clamp pulls the camera back inside as soon as following resumes (the original clamps in follow mode too).
+- `Freeze()` / `Unfreeze()` hold the camera in place while leaving.
+- Both numbers are in `GameCameraSettings`; HeroConfig is untouched and a test checks it has no such fields.
+
+`RoomInfo` is a small per-room component: scene name, map zone id and name (Tut rooms: 13, "Moss Cave") and the `RoomBounds` reference. Camera numbers are not per room.
+
+PROVISIONAL: the original decides "at the edge" with its own tests on the target position and an unread `targetDeltaX`; I use "the clamped camera x is on a side limit". Stubs: entry snap ignores lock areas and does not wait a physics step; RoomInfo look-and-feel (colours, light, audio, wind, darkness, border walls).

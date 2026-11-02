@@ -61,6 +61,10 @@ namespace Hollowknight.Silksong
         [Header("Room edge (CameraController.KeepWithinSceneBounds)")]
         public float EdgeInsetX = 14.6f;
         public float EdgeInsetY = 8.3f;
+
+        [Header("Entering a room (CameraController.PositionToHero)")]
+        public float EntryHoldSeconds = 0.1f;      // literal WaitForSeconds(0.1) after the snap
+        public float EntryNudgeUnits = 1f;         // literal 1: hero x +-1 when at a side edge facing inward
     }
 
     // The follow camera. Two stages like the original: a follow target that leads the hero (look-ahead, dash lead,
@@ -75,7 +79,35 @@ namespace Hollowknight.Silksong
         public GameCameraSettings Settings = new GameCameraSettings();
 
         public bool ManualStepping { get; set; }
-        public RoomBounds Bounds { get => bounds; set => bounds = value; }
+        // Swapping rooms. Motion left over from the old room is dropped so the camera cannot overshoot into the new
+        // one; a null or destroyed room just means "no limits" (Unity's null check covers destroyed objects).
+        public RoomBounds Bounds
+        {
+            get => bounds;
+            set
+            {
+                bounds = value;
+                followVel = camVel = Vector2.zero;
+                if (initialised) followPos = KeepInside(followPos);
+            }
+        }
+
+        // Switches to a room's bounds. The snap to the hero is a separate call (SnapTo) because the hero is only
+        // in position after the arrival gate has placed it.
+        public void EnterRoom(RoomInfo room)
+        {
+            Bounds = room != null ? room.Bounds : null;
+        }
+
+        // True from SnapTo until the hold has run out (the original's IsPositioningCamera).
+        public bool IsHolding => holdRemaining > 0f;
+        public bool IsPositioning => IsHolding;
+        public bool IsFrozen => frozen;
+        public event Action PositionedAtHero;
+
+        // Holds the camera where it is (leaving a room: the original's FreezeInPlace) until Unfreeze.
+        public void Freeze() { frozen = true; }
+        public void Unfreeze() { frozen = false; }
         public ICameraSubject Subject { get; set; }
 
         // Setting the target re-reads its hero (if any) and snaps to it on the next step.
@@ -98,7 +130,8 @@ namespace Hollowknight.Silksong
         public float FallOffset => fallOffset;
         public float LookOffsetY => lookOffset;
 
-        bool initialised;
+        bool initialised, frozen;
+        float holdRemaining;
         Vector2 followPos, followVel, camVel, heroPrev;
         float xOffset, dashOffset, fallOffset, lookOffset;
         float fallDamp, lookTimer, lookSlowTimer;
@@ -118,7 +151,8 @@ namespace Hollowknight.Silksong
             Stubs.NotImplemented("GameCamera: sprint, wall-sprint, slide, harpoon, updraft, super-jump and rising look-ahead/offsets");
             Stubs.NotImplemented("GameCamera: umbrella-float look-down");
             Stubs.NotImplemented("GameCamera: lock areas (CameraLockArea) and camera offset areas");
-            Stubs.NotImplemented("GameCamera: detach / short-damp after hits and respawns, scene-transition positioning");
+            Stubs.NotImplemented("GameCamera: detach / short-damp after hits and respawns");
+            Stubs.NotImplemented("GameCamera: entry snap ignores lock areas (no CameraLockArea clamp) and does not wait one physics step");
             Stubs.NotImplemented("GameCamera: screen shake and post effects (bloom, colour correction, noise) as URP volume");
         }
 
@@ -133,10 +167,42 @@ namespace Hollowknight.Silksong
         public void SnapToTarget()
         {
             if (target == null) return;
+            PlaceAtHero(target.position, FacingRight, false);
+        }
+
+        // Entering a room: jump to the hero at `heroPosition` inside the CURRENT bounds (set them first with
+        // Bounds / EnterRoom), no smoothing, then hold still for EntryHoldSeconds before following resumes.
+        // The position is passed in because the hero object may not have been moved yet when the arrival gate
+        // calls this. Facing comes from the subject.
+        public void SnapTo(Vector2 heroPosition) => SnapTo(heroPosition, FacingRight);
+
+        public void SnapTo(Vector2 heroPosition, bool facingRight)
+        {
+            PlaceAtHero(heroPosition, facingRight, true);
+            holdRemaining = Settings.EntryHoldSeconds;
+            frozen = false;
+            // A zero hold means no hold: finish at once so IsPositioning never stays true.
+            if (holdRemaining <= 0f) FinishHold();
+        }
+
+        void FinishHold()
+        {
+            holdRemaining = 0f;
+            // The hero may have moved (or been teleported) while the camera was held; without this the follow
+            // target would be carried along by that whole distance on the first free step.
+            if (target != null) heroPrev = target.position;
+            followVel = camVel = Vector2.zero;
+            PositionedAtHero?.Invoke();
+        }
+
+        // The original's PositionToHero: if the clamped position sits on a side edge of the room and the hero
+        // faces inward, the camera goes to hero x +-1 instead (not clamped, as in the original) so the hero is
+        // not drawn jammed against the wall. The ordinary clamp in Step pulls it back inside once following resumes.
+        void PlaceAtHero(Vector2 hero, bool facingRight, bool nudgeAtEdge)
+        {
             if (cam == null) cam = GetComponent<Camera>();
             var s = Settings;
-            Vector2 hero = target.position;
-            xOffset = Mathf.Clamp(FacingRight ? 1f : -1f, -s.XLookAhead, s.XLookAhead);
+            xOffset = Mathf.Clamp(facingRight ? 1f : -1f, -s.XLookAhead, s.XLookAhead);
             dashOffset = fallOffset = lookOffset = 0f;
             fallDamp = s.CameraDampTime;
             lookTimer = lookSlowTimer = 0f;
@@ -144,7 +210,22 @@ namespace Hollowknight.Silksong
             followVel = camVel = Vector2.zero;
             followPos = KeepInside(new Vector2(hero.x + xOffset, hero.y));
             heroPrev = hero;
-            Place(followPos);
+            Vector2 camPos = followPos;
+            if (nudgeAtEdge && bounds != null)
+            {
+                Vector2 inset = Inset();
+                Rect area = bounds.Area;
+                // A room narrower than the view has no side edges to be jammed against (the camera is centred).
+                if (area.width > 2f * inset.x)
+                {
+                    const float eps = 0.0001f;
+                    bool leftEdge = camPos.x <= area.xMin + inset.x + eps;
+                    bool rightEdge = camPos.x >= area.xMax - inset.x - eps;
+                    if ((leftEdge && facingRight) || (rightEdge && !facingRight))
+                        camPos.x = hero.x + (facingRight ? s.EntryNudgeUnits : -s.EntryNudgeUnits);
+                }
+            }
+            Place(camPos);
             initialised = true;
         }
 
@@ -152,7 +233,15 @@ namespace Hollowknight.Silksong
 
         public void Step(float dt)
         {
-            if (target == null || dt <= 0f) return;
+            if (dt <= 0f || frozen) return;
+            // The entry hold runs before the target check so it still ends if the target is briefly missing.
+            if (holdRemaining > 0f)
+            {
+                holdRemaining -= dt;
+                if (holdRemaining <= 0.0001f) FinishHold();
+                return;
+            }
+            if (target == null) return;
             if (!initialised) { SnapToTarget(); return; }
             var s = Settings;
             Vector2 hero = target.position;
