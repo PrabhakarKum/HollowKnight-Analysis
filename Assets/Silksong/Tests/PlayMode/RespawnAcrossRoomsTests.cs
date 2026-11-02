@@ -265,5 +265,166 @@ namespace Hollowknight.Silksong.Tests
             Assert.AreEqual(nameB, spot.scene);
             Assert.AreEqual(201f, spot.position.x, 1f, "at the arrival gate");
         }
+
+        // ---------- hazard in room B ----------
+
+        static int Count<T>() where T : UnityEngine.Object =>
+            UnityEngine.Object.FindObjectsByType<T>(FindObjectsInactive.Include, FindObjectsSortMode.None).Length;
+
+        IEnumerator InB_StartedFromA()
+        {
+            MakeWorld();
+            yield return world.StartInRoom(nameA, "right1");
+            yield return Leave(nameA, "right1");
+        }
+
+        [UnityTest]
+        public IEnumerator TouchingATrigger_InB_StoresItsMarker_ForRoomB()
+        {
+            yield return InB_StartedFromA();
+            world.PlaceHero(new Vector2(240f, 1.5f));
+            yield return Until(() => world.PlayerData.hazardRespawn.markerName == "TriggerSpot", "the trigger to store its marker");
+
+            Assert.AreEqual(nameB, world.PlayerData.hazardRespawn.scene);
+            Assert.AreEqual(240f, world.PlayerData.hazardRespawn.position.x, 0.01f);
+            Assert.IsFalse(world.PlayerData.hazardRespawn.facingRight);
+        }
+
+        [UnityTest]
+        public IEnumerator SpikeHit_InB_PutsTheHeroAtTheSavedSpot_InsideB()
+        {
+            yield return InB_StartedFromA();
+            world.PlaceHero(new Vector2(240f, 1.5f));
+            yield return Until(() => world.PlayerData.hazardRespawn.markerName == "TriggerSpot", "the trigger to store its marker");
+
+            world.PlaceHero(new Vector2(250f, 1.5f));   // into the spikes
+            yield return Until(() => world.Hero.Health.Health < world.Hero.Health.MaxHealth, "the spikes to hit");
+            yield return Until(() => Mathf.Abs(world.Hero.transform.position.x - 240f) < 1f, "the hero to reappear at the saved spot");
+
+            Assert.AreEqual(world.Hero.Health.MaxHealth - 1, world.Hero.Health.Health);
+            Assert.IsFalse(world.Hero.Health.IsDead);
+            Assert.IsFalse(world.Hero.FacingRight, "faces the way the marker says");
+            Assert.AreEqual(nameB, SceneManager.GetActiveScene().name, "still in room B");
+            Assert.AreEqual(1, Count<HeroController>());
+        }
+
+        [UnityTest]
+        public IEnumerator SpikeHit_WithAStaleSpotFromRoomA_FallsBackToBStartMarker()
+        {
+            yield return InB_StartedFromA();
+            world.PlayerData.SetHazardRespawn(nameA, "OldSpot", new Vector2(10f, 1f), true);
+
+            world.PlaceHero(new Vector2(250f, 1.5f));
+            yield return Until(() => world.Hero.Health.Health < world.Hero.Health.MaxHealth, "the spikes to hit");
+            yield return Until(() => Mathf.Abs(world.Hero.transform.position.x - 220f) < 1f, "the hero to reappear at B's Start");
+
+            Assert.IsFalse(world.PlayerData.hazardRespawn.IsSet, "the stale spot was cleared");
+            Assert.AreEqual(nameB, SceneManager.GetActiveScene().name);
+        }
+
+        // ---------- death ----------
+
+        void BenchInA()
+        {
+            world.PlayerData.respawnScene = nameA;
+            world.PlayerData.respawnMarker = "Start";
+            world.Hero.Health.DeathRespawnDelaySeconds = 0.05f;
+        }
+
+        void Kill()
+        {
+            var h = world.Hero.Health;
+            Assert.IsTrue(h.TakeHit(new HitInstance { Damage = h.Health, Direction = AttackDirection.Normal }));
+            Assert.IsTrue(h.IsDead);
+        }
+
+        IEnumerator UntilRespawned() => Until(() => !world.Hero.Health.IsDead && !world.Manager.IsTransitionRunning
+            && world.Manager.State == GameState.Playing && !world.Hero.ControlLocked, "the hero to respawn", 8f);
+
+        [UnityTest]
+        public IEnumerator Death_InB_WithBenchInA_LoadsA_SameHero_FullHealth_ControlBack_CameraFollows()
+        {
+            yield return InB_StartedFromA();
+            BenchInA();
+            int heroId = world.Hero.GetInstanceID();
+            int finished = 0;
+            world.Manager.TransitionFinished += ok => { if (ok) finished++; };
+
+            Kill();
+            yield return UntilRespawned();
+            yield return Until(() => finished > 0, "the respawn transition to finish");
+
+            Assert.IsTrue(SceneManager.GetSceneByName(nameA).isLoaded, "back in the bench room");
+            Assert.IsFalse(SceneManager.GetSceneByName(nameB).isLoaded);
+            Assert.AreEqual(nameA, SceneManager.GetActiveScene().name);
+            Assert.AreEqual(heroId, world.Hero.GetInstanceID(), "same hero object");
+            Assert.AreEqual(1, Count<HeroController>());
+            Assert.AreEqual(world.Hero.Health.MaxHealth, world.Hero.Health.Health);
+            Assert.AreEqual(20f, world.Hero.transform.position.x, 1f, "at the Start marker");
+            Assert.IsFalse(world.Hero.ControlLocked);
+            Assert.AreEqual(nameA, world.PlayerData.currentScene);
+
+            var infoA = RoomWorldBootstrap.FindRoomInfo(SceneManager.GetSceneByName(nameA));
+            Assert.AreSame(infoA.Bounds, world.RoomCamera.Bounds, "camera bounds are room A's");
+            Assert.IsTrue(infoA.Bounds.Area.Contains(world.RoomCamera.transform.position), "camera snapped into A");
+            Assert.IsFalse(world.RoomCamera.IsFrozen);
+            Assert.AreEqual(nameA, world.PlayerData.hazardRespawn.scene, "hazard spot follows to the bench room");
+        }
+
+        [UnityTest]
+        public IEnumerator Death_InTheBenchRoom_RespawnsInPlace_WithoutATransition()
+        {
+            MakeWorld();
+            yield return world.StartInRoom(nameA, "right1");
+            BenchInA();
+            int started = 0;
+            world.Manager.TransitionStarted += r => started++;
+
+            Kill();
+            yield return UntilRespawned();
+
+            Assert.AreEqual(0, started);
+            Assert.AreEqual(nameA, SceneManager.GetActiveScene().name);
+            Assert.AreEqual(20f, world.Hero.transform.position.x, 1f);
+            Assert.AreEqual(world.Hero.Health.MaxHealth, world.Hero.Health.Health);
+        }
+
+        [UnityTest]
+        public IEnumerator SecondDeath_Works_AndLeavesOneOfEverything()
+        {
+            yield return InB_StartedFromA();
+            BenchInA();
+            Kill();
+            yield return UntilRespawned();
+            yield return Until(() => SceneManager.GetSceneByName(nameA).isLoaded && !SceneManager.GetSceneByName(nameB).isLoaded, "room A only");
+
+            yield return Leave(nameA, "right1");
+            Assert.IsTrue(SceneManager.GetSceneByName(nameB).isLoaded);
+            Kill();
+            yield return UntilRespawned();
+            yield return Until(() => !SceneManager.GetSceneByName(nameB).isLoaded, "room B to unload");
+            yield return null;
+
+            Assert.IsTrue(SceneManager.GetSceneByName(nameA).isLoaded);
+            Assert.AreEqual(1, Count<HeroController>());
+            Assert.AreEqual(1, Count<GameCamera>());
+            Assert.AreEqual(1, Count<RoomTransitionManager>());
+            Assert.AreEqual(1, Count<ScreenFader>());
+            Assert.AreEqual(2, GateRegistry.Count, "only the live room's gates are registered");
+            Assert.AreEqual(world.Hero.Health.MaxHealth, world.Hero.Health.Health);
+        }
+
+        [UnityTest]
+        public IEnumerator Death_WithABenchMarkerMissingFromTheRoom_FallsBackToItsStartMarker()
+        {
+            yield return InB_StartedFromA();
+            BenchInA();
+            world.PlayerData.respawnMarker = "No Such Marker";
+            Kill();
+            yield return UntilRespawned();
+
+            Assert.AreEqual(nameA, SceneManager.GetActiveScene().name);
+            Assert.AreEqual(20f, world.Hero.transform.position.x, 1f);
+        }
     }
 }

@@ -74,6 +74,7 @@ namespace Hollowknight.Silksong
             }
             world.PlaceHero(spot);
             world.AdoptRoom(room);
+            if (startPoint != null && startPoint.SetsBenchRespawn) world.SetBenchRespawn(startPoint);
             if (world.RoomCamera.GetComponent<AudioListener>() == null) world.RoomCamera.gameObject.AddComponent<AudioListener>();
             Debug.Log("[World] Started in room '" + room.name + "'.");
         }

@@ -58,6 +58,16 @@ namespace Hollowknight.Silksong
         IHeroInput injectedInput;
         IRoomSceneSource sceneSource;
         bool duplicate;
+        DeathRespawnController deathRespawn;
+
+        // The bench: where the hero comes back after dying (PlayerData respawnScene + respawnMarker). The grey-box
+        // rooms set it from the marker flagged setsBenchRespawn when the world starts in that room.
+        public void SetBenchRespawn(RespawnMarker marker)
+        {
+            if (marker == null) return;
+            PlayerData.respawnScene = marker.gameObject.scene.name;
+            PlayerData.respawnMarker = marker.MarkerName;
+        }
 
         // Builds a whole world in code. Returns the running one if a world already exists (nothing is duplicated).
         public static RoomWorldBootstrap Create(HeroConfig heroConfig, IHeroInput input, RoomTransitionSettings transitionSettings = null,
@@ -113,6 +123,10 @@ namespace Hollowknight.Silksong
             Manager.RoomActivated += OnRoomActivated;
             Manager.HeroPlaced += OnHeroPlaced;
             Manager.TransitionFinished += OnTransitionFinished;
+
+            // Death: the hero's death delay calls the controller, which respawns in place or through the manager.
+            Manager.RespawnPlacer = (scene, markerName) => DeathRespawnController.PlaceAtMarker(hero.Health, scene, markerName);
+            deathRespawn = new DeathRespawnController(hero.Health, Manager, () => Loader.CurrentRoom);
 
             Stubs.NotImplemented("RoomWorldBootstrap: saving PlayerData to disk after a room change");
 
@@ -331,8 +345,10 @@ namespace Hollowknight.Silksong
         void OnDestroy()
         {
             if (duplicate) return;
+            if (deathRespawn != null) deathRespawn.Dispose();
             if (Manager != null)
             {
+                Manager.RespawnPlacer = null;
                 Manager.TransitionStarted -= OnTransitionStarted;
                 Manager.RoomActivated -= OnRoomActivated;
                 Manager.HeroPlaced -= OnHeroPlaced;

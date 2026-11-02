@@ -171,6 +171,91 @@ namespace Hollowknight.Silksong
             routine = StartCoroutine(Guard(Run(request)));
         }
 
+        // Set by the world (task 8): puts the dead hero back at the named respawn marker of the given room (full health,
+        // control returned). Returns false when it could not. Without it RequestRespawn is refused.
+        public Func<Scene, string, bool> RespawnPlacer { get; set; }
+
+        // A death whose bench is in another room: same fade / load / swap sequence as a gate change, but no walk out and
+        // no walk in; the hero is placed at a respawn MARKER of the target room instead of a gate. The events keep their
+        // order (TransitionStarted, RoomActivated, HeroPlaced, TransitionFinished) with a null arrival gate. The request
+        // carries the marker name in EntryGate. Returns whether it was accepted.
+        public bool RequestRespawn(string targetScene, string markerName)
+        {
+            if (loader == null || fader == null || hero == null || RespawnPlacer == null)
+            {
+                Debug.LogWarning("[Transition] Respawn request rejected: loader, fader, hero or placer is not configured.");
+                return false;
+            }
+            bool sameRoom = loader is IRoomLoaderCleanup info && info.CurrentRoomName == targetScene;
+            bool stateOk = State == GameState.Playing || State == GameState.EnteringLevel;
+            if (running || !stateOk || string.IsNullOrEmpty(targetScene) || sameRoom)
+            {
+                Debug.LogWarning($"[Transition] Respawn in '{targetScene}' rejected (running={running}, state={State}, targetIsCurrentRoom={sameRoom}).");
+                return false;
+            }
+            if (routine != null)
+            {
+                StopCoroutine(routine);
+                Notify(TransitionFinished, false);
+            }
+            if (activeFade != null) StopCoroutine(activeFade);
+            activeFade = null;
+            var request = new TransitionRequest { TargetScene = targetScene, EntryGate = markerName, LeaveDirection = GatePosition.Unknown };
+            routine = StartCoroutine(Guard(RunRespawn(request)));
+            return true;
+        }
+
+        IEnumerator RunRespawn(TransitionRequest request)
+        {
+            running = true;
+            State = GameState.ExitingLevel;
+            var senders = new List<TransitionPoint>();
+            Exception err = null;
+            Notify(TransitionStarted, request);
+
+            var fade = StartFade(fader.FadeOut(), ex => err = ex);
+            yield return new WaitForSecondsRealtime(Settings.fadeWaitSeconds);
+            yield return fade;
+            if (err != null) { yield return Fail(err, "fade out failed", senders, false); yield break; }
+
+            yield return Stage(loader.LoadHidden(request.TargetScene), ex => err = ex);
+            if (err != null) { yield return Fail(err, "loading the room failed", senders, false); yield break; }
+
+            yield return Stage(loader.ActivateAndUnloadPrevious(), ex => err = ex);
+            if (err != null) { yield return Fail(err, "activating the room failed", senders, false); yield break; }
+
+            var scene = SceneManager.GetSceneByName(request.TargetScene);
+            if (!scene.IsValid() || !scene.isLoaded)
+            {
+                yield return Fail(null, $"scene '{request.TargetScene}' is not loaded after activation", senders, true);
+                yield break;
+            }
+
+            Stubs.NotImplemented("RoomTransitionManager.LevelStateAndGc");
+            Notify(RoomActivated, scene, null);
+
+            // The hero is put at the marker at once (before the entering wait), so a dead body never lingers in the new room.
+            bool placed = false;
+            try { placed = RespawnPlacer(scene, request.EntryGate); }
+            catch (Exception ex) { err = ex; }
+            if (err != null || !placed)
+            {
+                yield return Fail(err, $"no respawn marker '{request.EntryGate}' could place the hero", senders, true);
+                yield break;
+            }
+            Notify(HeroPlaced, scene, null);
+
+            State = GameState.EnteringLevel;
+            running = false;
+            yield return new WaitForSecondsRealtime(Settings.heroWaitSeconds);
+            yield return StartFade(fader.FadeIn(), ex => err = ex);
+            if (err != null) { yield return Fail(err, "fade in failed", senders, true); yield break; }
+
+            State = GameState.Playing;
+            routine = null;
+            Notify(TransitionFinished, true);
+        }
+
         // The gate marked itself activated when it sent this; let it fire again.
         static void ReleaseGates(TransitionRequest request)
         {
