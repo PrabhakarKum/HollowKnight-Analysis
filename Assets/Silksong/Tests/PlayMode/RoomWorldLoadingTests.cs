@@ -44,6 +44,7 @@ namespace Hollowknight.Silksong.Tests
             Stubs.StubsDocPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "rw-stubs-" + Guid.NewGuid() + ".md");
             Stubs.ResetForTests();
             runnerScene = SceneManager.GetActiveScene();
+            RemoveStrays();
 
             string id = Guid.NewGuid().ToString("N").Substring(0, 8);
             nameA = "RwA_" + id;
@@ -55,6 +56,26 @@ namespace Hollowknight.Silksong.Tests
 #if UNITY_EDITOR
             config = HeroConfigConsistency.LoadProjectAsset();
 #endif
+        }
+
+        // Earlier fixtures can leave a hero, camera or manager behind in a scene that stays loaded (for example the
+        // hero room scene). Counting tests would then see two of everything, so remove what this fixture did not make.
+        static void RemoveStrays()
+        {
+            int removed = 0;
+            foreach (var b in UnityEngine.Object.FindObjectsByType<RoomWorldBootstrap>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            { UnityEngine.Object.DestroyImmediate(b.gameObject); removed++; }
+            foreach (var m in UnityEngine.Object.FindObjectsByType<RoomTransitionManager>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            { if (m != null) UnityEngine.Object.DestroyImmediate(m.gameObject); removed++; }
+            foreach (var f in UnityEngine.Object.FindObjectsByType<ScreenFader>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            { if (f != null) UnityEngine.Object.DestroyImmediate(f.gameObject); removed++; }
+            foreach (var h in UnityEngine.Object.FindObjectsByType<HeroController>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            { if (h != null) UnityEngine.Object.DestroyImmediate(h.gameObject); removed++; }
+            foreach (var c in UnityEngine.Object.FindObjectsByType<GameCamera>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            { if (c != null) UnityEngine.Object.DestroyImmediate(c.gameObject); removed++; }
+            if (removed > 0) Debug.LogWarning("[RoomWorldLoadingTests] Removed " + removed + " leftover world objects from an earlier fixture.");
+            TransitionPoint.ResetHandlerForTests();
+            GateRegistry.ClearForTests();
         }
 
         [UnityTearDown]
@@ -86,6 +107,8 @@ namespace Hollowknight.Silksong.Tests
 
             AddGate(scene, "left1", new Vector2(x0 + 1f, 2f), leftTarget, "right1");
             AddGate(scene, "right1", new Vector2(x0 + 59f, 2f), rightTarget, "left1");
+            // Bottom gate under the floor (the hero can never touch it; used as an arrival spot).
+            AddGate(scene, "bot1", new Vector2(x0 + 30f, -1.5f), null, "top1", new Vector2(4f, 1f));
 
             var boundsGo = new GameObject("Bounds");
             var bounds = boundsGo.AddComponent<RoomBounds>();
@@ -94,16 +117,16 @@ namespace Hollowknight.Silksong.Tests
 
             var infoGo = new GameObject("Info");
             var info = infoGo.AddComponent<RoomInfo>();
-            info.Configure(name, zoneId, zone, bounds);
+            info.Configure(name, zoneId, zone, bounds, zone.ToUpperInvariant().Replace(' ', '_'));
             SceneManager.MoveGameObjectToScene(infoGo, scene);
         }
 
-        static void AddGate(Scene scene, string gateName, Vector2 pos, string target, string arrival)
+        static void AddGate(Scene scene, string gateName, Vector2 pos, string target, string arrival, Vector2? size = null)
         {
             var go = new GameObject(gateName);
             go.transform.position = pos;
             var box = go.AddComponent<BoxCollider2D>();
-            box.size = new Vector2(1f, 4f);
+            box.size = size ?? new Vector2(1f, 4f);
             box.isTrigger = true;
             SceneManager.MoveGameObjectToScene(go, scene);
             var gate = go.AddComponent<TransitionPoint>();
@@ -194,7 +217,7 @@ namespace Hollowknight.Silksong.Tests
             Assert.AreEqual(1, Count<RoomTransitionManager>());
             Assert.AreEqual(1, Count<ScreenFader>());
             Assert.AreEqual(heroId, world.Hero.GetInstanceID());
-            Assert.AreEqual(2, GateRegistry.Count, "only the live room's two gates are registered");
+            Assert.AreEqual(3, GateRegistry.Count, "only the live room's three gates are registered");
             Assert.AreSame(world.Manager, TransitionPoint.Handler);
         }
 
@@ -215,13 +238,15 @@ namespace Hollowknight.Silksong.Tests
         public IEnumerator PlayerData_FollowsTheRoom()
         {
             MakeWorld();
+            world.PlayerData.respawnScene = "BenchRoom";   // a bench / marker spot; room changes must not touch it
             yield return world.StartInRoom(nameA, "right1");
-            Assert.AreEqual(nameA, world.PlayerData.respawnScene);
-            Assert.AreEqual("Zone A", world.PlayerData.mapZone);
+            Assert.AreEqual(nameA, world.PlayerData.currentScene);
+            Assert.AreEqual("ZONE_A", world.PlayerData.mapZone, "stable key, not the display name");
 
             yield return Leave(nameA, "right1");
-            Assert.AreEqual(nameB, world.PlayerData.respawnScene);
-            Assert.AreEqual("Zone B", world.PlayerData.mapZone);
+            Assert.AreEqual(nameB, world.PlayerData.currentScene);
+            Assert.AreEqual("ZONE_B", world.PlayerData.mapZone);
+            Assert.AreEqual("BenchRoom", world.PlayerData.respawnScene, "respawnScene is bench-only");
         }
 
         [UnityTest]
@@ -243,7 +268,7 @@ namespace Hollowknight.Silksong.Tests
             Assert.AreEqual(nameA, SceneManager.GetActiveScene().name);
             Assert.IsFalse(world.Hero.ControlLocked, "hero has control");
             Assert.IsFalse(world.RoomCamera.IsFrozen, "camera is released");
-            Assert.AreEqual(nameA, world.PlayerData.respawnScene);
+            Assert.AreEqual(nameA, world.PlayerData.currentScene);
         }
 
         [UnityTest]
@@ -335,6 +360,260 @@ namespace Hollowknight.Silksong.Tests
             yield return loader.LoadHidden(nameB);
             yield return loader.ActivateAndUnloadPrevious();
             Assert.IsTrue(SceneManager.GetSceneByName(nameA).isLoaded, "protected scene stays");
+        }
+
+        // ---- fix round: same room, timeouts, abandon, fail-after-swap, placement, pairing ----
+
+        sealed class InstantFader : IScreenFader
+        {
+            public IEnumerator FadeOut() { yield break; }
+            public IEnumerator FadeIn() { yield break; }
+        }
+
+        // A hero stub. refuse = it never takes control (like a hero without input).
+        sealed class StubHero : ITransitionHero, ITransitionHeroRecovery
+        {
+            readonly bool refuse;
+            public StubHero(bool refuseControl) { refuse = refuseControl; }
+            public bool ControlLocked { get; private set; }
+            public Rigidbody2D Body => null;
+            public HeroTransitionState GetTransitionState() => new HeroTransitionState { InPosition = true };
+            public void LeaveRoom(GatePosition gate) { if (!refuse) ControlLocked = true; }
+            public IEnumerator EnterRoom(TransitionPoint gate, float delay)
+            {
+                yield return null;
+                ControlLocked = false;
+            }
+            public void RestoreControl() { ControlLocked = false; }
+        }
+
+        sealed class FakeCleanupLoader : IRoomLoader, IRoomLoaderCleanup
+        {
+            public int Abandoned, Finished;
+            public string CurrentRoomName => null;
+            public IEnumerator LoadHidden(string sceneName) { yield return null; }
+            public IEnumerator ActivateAndUnloadPrevious() { yield return null; throw new InvalidOperationException("activate-boom"); }
+            public void AbandonPending() { Abandoned++; }
+            public IEnumerator FinishAbandon() { Finished++; yield break; }
+        }
+
+        // The "load" is a real engine operation that is not a scene load and does not finish at once.
+        sealed class SlowSource : IRoomSceneSource
+        {
+            public bool Exists(string sceneName) => true;
+            public AsyncOperation BeginLoad(string sceneName) => Resources.UnloadUnusedAssets();
+        }
+
+        static RoomTransitionSettings Instant() =>
+            new RoomTransitionSettings { fadeWaitSeconds = 0f, heroWaitSeconds = 0f, fadeOutSeconds = 0f, fadeInSeconds = 0f };
+
+        readonly List<GameObject> extras = new List<GameObject>();
+
+        RoomTransitionManager MakeStandaloneManager(IRoomLoader loader, ITransitionHero hero)
+        {
+            var go = new GameObject("StandaloneManager");
+            extras.Add(go);
+            var manager = go.AddComponent<RoomTransitionManager>();
+            manager.Configure(loader, new InstantFader(), hero, Instant());
+            return manager;
+        }
+
+        [UnityTearDown]
+        public IEnumerator DestroyExtras()
+        {
+            foreach (var go in extras) if (go != null) UnityEngine.Object.Destroy(go);
+            extras.Clear();
+            yield return null;
+        }
+
+        [UnityTest]
+        public IEnumerator SameRoomRequest_IsRejected_BeforeAnythingMoves()
+        {
+            MakeWorld();
+            yield return world.StartInRoom(nameA, "right1");
+            var gate = GateRegistry.Find("right1", SceneManager.GetSceneByName(nameA));
+            gate.Configure(nameA, "left1", Vector2.zero);
+            int started = 0;
+            world.Manager.TransitionStarted += r => started++;
+
+            LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex("targetIsCurrentRoom=True"));
+            world.Manager.RequestTransition(gate.BuildRequest());
+            yield return null;
+
+            Assert.AreEqual(0, started);
+            Assert.AreEqual(GameState.Playing, world.Manager.State);
+            Assert.IsFalse(world.Manager.IsTransitionRunning);
+            Assert.IsFalse(world.Hero.ControlLocked);
+            Assert.IsTrue(SceneManager.GetSceneByName(nameA).isLoaded);
+        }
+
+        [UnityTest]
+        public IEnumerator Loader_RefusesTheLiveRoomsName()
+        {
+            var loader = new AdditiveRoomLoader(source);
+            yield return loader.LoadHidden(nameA);
+            yield return loader.ActivateAndUnloadPrevious();
+            Assert.Throws<InvalidOperationException>(() => loader.LoadHidden(nameA).MoveNext());
+        }
+
+        [UnityTest]
+        public IEnumerator Loader_TimesOut_WhenALoadNeverGetsReady()
+        {
+            var loader = new AdditiveRoomLoader(new SlowSource(), new RoomTransitionSettings { loadTimeoutSeconds = 0f });
+            var steps = loader.LoadHidden("Slow");
+            Exception err = null;
+            while (true)
+            {
+                try { if (!steps.MoveNext()) break; }
+                catch (Exception e) { err = e; break; }
+                yield return null;
+            }
+            Assert.IsNotNull(err, "the wait gave up with an error");
+            Assert.IsFalse(loader.HasPending, "nothing stays pending");
+        }
+
+        [UnityTest]
+        public IEnumerator Loader_LoadingTwice_AbandonsTheFirstHiddenRoom()
+        {
+            var loader = new AdditiveRoomLoader(source);
+            yield return loader.LoadHidden(nameA);
+            Assert.IsTrue(SceneManager.GetSceneByName(nameA).isLoaded);
+            yield return loader.LoadHidden(nameB);
+            yield return Until(() => !SceneManager.GetSceneByName(nameA).isLoaded, "abandoned room A to unload");
+            yield return loader.ActivateAndUnloadPrevious();
+            Assert.AreEqual(nameB, SceneManager.GetActiveScene().name);
+        }
+
+        [UnityTest]
+        public IEnumerator Loader_AbandonPending_LeavesNoExtraScene()
+        {
+            var loader = new AdditiveRoomLoader(source);
+            yield return loader.LoadHidden(nameA);
+            loader.AbandonPending();
+            Assert.IsFalse(loader.HasPending);
+            yield return loader.FinishAbandon();
+            yield return Until(() => !SceneManager.GetSceneByName(nameA).isLoaded, "abandoned room to unload");
+        }
+
+        [UnityTest]
+        public IEnumerator FailedChange_AsksTheLoaderToCleanUp()
+        {
+            var loader = new FakeCleanupLoader();
+            var manager = MakeStandaloneManager(loader, new StubHero(false));
+            LogAssert.Expect(LogType.Exception, new System.Text.RegularExpressions.Regex("activate-boom"));
+            LogAssert.Expect(LogType.Error, new System.Text.RegularExpressions.Regex(FailedOld));
+            manager.RequestTransition(new TransitionRequest { TargetScene = "Elsewhere", EntryGate = "left1", LeaveDirection = GatePosition.Right });
+            yield return Until(() => !manager.IsTransitionRunning && manager.State == GameState.Playing, "recovery");
+            Assert.GreaterOrEqual(loader.Abandoned, 1);
+            Assert.AreEqual(1, loader.Finished);
+        }
+
+        [UnityTest]
+        public IEnumerator HeroPlaced_IsSkipped_WhenTheHeroNeverTookControl()
+        {
+            var loader = new AdditiveRoomLoader(source);
+            yield return loader.LoadHidden(nameA);
+            yield return loader.ActivateAndUnloadPrevious();
+            var manager = MakeStandaloneManager(loader, new StubHero(true));
+            int placed = 0;
+            bool finishedOk = false;
+            manager.HeroPlaced += (s, g) => placed++;
+            manager.TransitionFinished += ok => finishedOk = ok;
+
+            LogAssert.Expect(LogType.Error, new System.Text.RegularExpressions.Regex("hero was not placed"));
+            var gate = GateRegistry.Find("right1", SceneManager.GetSceneByName(nameA));
+            manager.RequestTransition(gate.BuildRequest());
+            yield return Until(() => !manager.IsTransitionRunning && manager.State == GameState.Playing, "change to end");
+
+            Assert.AreEqual(0, placed);
+            Assert.IsTrue(finishedOk);
+        }
+
+        [UnityTest]
+        public IEnumerator FailAfterSwap_CameraFollowsTheLiveRoom_AndHeroIsFree()
+        {
+            string nameC = "RwC_" + nameA.Substring(4);
+            source.Builders[nameC] = s =>
+            {
+                var boundsGo = new GameObject("Bounds");
+                var bounds = boundsGo.AddComponent<RoomBounds>();
+                bounds.Configure(new Rect(400f, 0f, 60f, 40f));
+                SceneManager.MoveGameObjectToScene(boundsGo, s);
+                var infoGo = new GameObject("Info");
+                infoGo.AddComponent<RoomInfo>().Configure(nameC, 3, "Zone C", bounds, "ZONE_C");
+                SceneManager.MoveGameObjectToScene(infoGo, s);
+            };
+            MakeWorld();
+            yield return world.StartInRoom(nameA, "right1");
+            var gate = GateRegistry.Find("right1", SceneManager.GetSceneByName(nameA));
+            gate.Configure(nameC, "left1", Vector2.zero);
+
+            LogAssert.Expect(LogType.Error, new System.Text.RegularExpressions.Regex("no gates in the searched room"));
+            LogAssert.Expect(LogType.Error, new System.Text.RegularExpressions.Regex(@"\[Transition\] Failed: .*old room is already gone"));
+            world.Manager.RequestTransition(gate.BuildRequest());
+            yield return Idle();
+
+            var infoC = RoomWorldBootstrap.FindRoomInfo(SceneManager.GetSceneByName(nameC));
+            Assert.AreSame(infoC.Bounds, world.RoomCamera.Bounds, "camera follows the room that is live");
+            Assert.IsFalse(world.RoomCamera.IsFrozen);
+            Assert.IsFalse(world.Hero.ControlLocked);
+            Assert.AreEqual(nameC, world.PlayerData.currentScene);
+        }
+
+        [UnityTest]
+        public IEnumerator SupersededRun_StillPairsStartedWithFinished()
+        {
+            MakeWorld();
+            yield return world.StartInRoom(nameA, "right1");
+            var events = new List<string>();
+            world.Manager.TransitionStarted += r => events.Add("started");
+            world.Manager.TransitionFinished += ok => events.Add("finished:" + ok);
+
+            world.Manager.RequestTransition(GateRegistry.Find("right1", SceneManager.GetSceneByName(nameA)).BuildRequest());
+            yield return Until(() => world.Manager.State == GameState.EnteringLevel, "the walk-in");
+            // Leaving again during the walk-in is the bottom-gate exception: the new run takes over the hero.
+            world.Manager.RequestTransition(GateRegistry.Find("left1", SceneManager.GetSceneByName(nameB)).BuildRequest());
+            yield return Idle();
+
+            CollectionAssert.AreEqual(new[] { "started", "finished:False", "started", "finished:True" }, events);
+        }
+
+        [UnityTest]
+        public IEnumerator ArrivingAtABottomGate_DoesNotImmediatelyLeaveAgain()
+        {
+            MakeWorld();
+            yield return world.StartInRoom(nameA, "right1");
+            // Documented behaviour: the arrival gate is NOT locked out. The hero is put 3 units above it and thrown
+            // up, so it only touches the gate again if it falls back into it, which is the original's bottom-gate
+            // exception. Here the gate sits under the floor, so the hero lands and the change ends.
+            var gate = GateRegistry.Find("right1", SceneManager.GetSceneByName(nameA));
+            gate.Configure(nameB, "bot1", Vector2.zero);
+            int started = 0;
+            world.Manager.TransitionStarted += r => started++;
+
+            world.Manager.RequestTransition(gate.BuildRequest());
+            yield return Idle();
+
+            Assert.AreEqual(1, started);
+            Assert.AreEqual(nameB, SceneManager.GetActiveScene().name);
+            Assert.AreEqual(230f, world.Hero.transform.position.x, 3f);
+            Assert.Greater(world.Hero.transform.position.y, 0f, "standing on the floor, not below it");
+        }
+
+        [UnityTest]
+        public IEnumerator ThrowingEventListener_IsLogged_AndDoesNotStopTheChange()
+        {
+            MakeWorld();
+            yield return world.StartInRoom(nameA, "right1");
+            int later = 0;
+            world.Manager.TransitionStarted += r => throw new InvalidOperationException("listener-boom");
+            world.Manager.TransitionStarted += r => later++;
+
+            LogAssert.Expect(LogType.Exception, new System.Text.RegularExpressions.Regex("listener-boom"));
+            yield return Leave(nameA, "right1");
+
+            Assert.AreEqual(1, later, "the next listener still ran");
+            Assert.IsTrue(SceneManager.GetSceneByName(nameB).isLoaded);
         }
     }
 }
