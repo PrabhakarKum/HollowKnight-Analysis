@@ -44,8 +44,31 @@ namespace Hollowknight.Silksong.Editor
         public bool OnLeftEdge => Name.StartsWith("left");
     }
 
+    // A spike patch standing on a floor (x range, GroundTop = the floor height under it; the patch is 1 high).
+    public sealed class SpikeSpec
+    {
+        public readonly float MinX, MaxX, GroundTop;
+        public SpikeSpec(float minX, float maxX, float groundTop) { MinX = minX; MaxX = maxX; GroundTop = groundTop; }
+    }
+
+    // A hazard respawn pair: the trigger box (x range) and the marker it stores (MarkerX), both on a floor.
+    public sealed class HazardSpotSpec
+    {
+        public readonly string Name;
+        public readonly float TriggerMinX, TriggerMaxX, MarkerX, GroundTop;
+        public readonly bool FacingRight;
+        public HazardSpotSpec(string name, float triggerMinX, float triggerMaxX, float markerX, float groundTop, bool facingRight)
+        {
+            Name = name; TriggerMinX = triggerMinX; TriggerMaxX = triggerMaxX; MarkerX = markerX; GroundTop = groundTop; FacingRight = facingRight;
+        }
+    }
+
     public sealed class RoomSpec
     {
+        // True: the Start marker is the bench (the death respawn). Only the start room, Tut_01.
+        public bool StartIsBench;
+        public readonly List<SpikeSpec> Spikes = new List<SpikeSpec>();
+        public readonly List<HazardSpotSpec> HazardSpots = new List<HazardSpotSpec>();
         public string Name;
         public string Title;
         public float Width, Height;
@@ -262,6 +285,10 @@ namespace Hollowknight.Silksong.Editor
             r.Gates.Add(new GateSpec("right2", 7.5f, "Tut_01b", "left2"));
             r.Gates.Add(new GateSpec("left2", 5f, "Tut_02", "right1"));
             r.Gates.Add(new GateSpec("left3", 0f, "Tut_02", "right2"));
+            r.StartIsBench = true;
+            // Walk right along the ledge: touch the yellow trigger, then fall into the spikes and reappear at its marker.
+            r.HazardSpots.Add(new HazardSpotSpec("HazardA", 25.5f, 28.5f, 27f, 7.5f, true));
+            r.Spikes.Add(new SpikeSpec(30f, 32f, 7.5f));
             r.Notes.Add(new KeyValuePair<string, Vector2>("left1 -> Tut_03 and top1 -> Bonetown: not built", new Vector2(20f, 19f)));
             return r;
         }
@@ -279,6 +306,10 @@ namespace Hollowknight.Silksong.Editor
             r.Blocks.Add(new BlockSpec("Bump", 40f, 46f, 2f, 0f));
             r.Gates.Add(new GateSpec("left1", 15f, "Tut_01", "right1"));
             r.Gates.Add(new GateSpec("left2", 7.5f, "Tut_01", "right2"));
+            r.HazardSpots.Add(new HazardSpotSpec("HazardLeft", 29.5f, 32.5f, 31f, 0f, false));
+            r.Spikes.Add(new SpikeSpec(28f, 29.5f, 0f));
+            r.HazardSpots.Add(new HazardSpotSpec("HazardRight", 47f, 49f, 48f, 0f, true));
+            r.Spikes.Add(new SpikeSpec(50f, 52f, 0f));
             r.Notes.Add(new KeyValuePair<string, Vector2>("right1 -> Weave_04: not built (wall)", new Vector2(48f, 4f)));
             return r;
         }
@@ -292,6 +323,10 @@ namespace Hollowknight.Silksong.Editor
             r.Blocks.Add(new BlockSpec("Bump", 8f, 14f, 2.5f, 0f));
             r.Gates.Add(new GateSpec("right1", 5f, "Tut_01", "left2"));
             r.Gates.Add(new GateSpec("right2", 0f, "Tut_01", "left3"));
+            r.HazardSpots.Add(new HazardSpotSpec("HazardA", 21f, 23f, 22f, 0f, true));
+            r.Spikes.Add(new SpikeSpec(24f, 26f, 0f));
+            r.HazardSpots.Add(new HazardSpotSpec("HazardB", 28f, 30.5f, 29f, 0f, true));
+            r.Spikes.Add(new SpikeSpec(32f, 34f, 0f));
             return r;
         }
 
@@ -320,9 +355,14 @@ namespace Hollowknight.Silksong.Editor
             var wallColor = Shade(spec.Tint, 0.6f);
             BuildWalls(world, spec, wallColor, assets.WhiteSprite);
 
+            var hazards = Child(root.transform, "Hazards");
             foreach (var g in spec.Gates)
             {
-                BuildGate(gates, g, spec, assets.WhiteSprite);
+                var gateComponent = BuildGate(gates, g, spec, assets.WhiteSprite);
+                // Arriving here sets the hazard respawn spot to a marker a few units inside the room, on the same floor.
+                float markerX = g.OnLeftEdge ? GateMarkerInset : spec.Width - GateMarkerInset;
+                var gateMarker = BuildHazardMarker(hazards, "HazardMarker_" + g.Name, markerX, g.GroundTop, g.OnLeftEdge, assets.WhiteSprite);
+                gateComponent.ConfigureHazard(gateMarker, false);
                 // Floor stub outside the room: the hero walks out over it, and arrives on it.
                 float x0 = g.OnLeftEdge ? -StubLength : spec.Width;
                 Block(world, "Stub_" + g.Name, x0, x0 + StubLength, g.GroundTop, g.GroundTop - 1f, spec.Tint, assets.WhiteSprite);
@@ -331,6 +371,9 @@ namespace Hollowknight.Silksong.Editor
             }
             foreach (var note in spec.Notes) Label(labels, note.Key, new Vector3(note.Value.x, note.Value.y, 0f), assets.LabelFont, 0.1f);
             Label(labels, spec.Name + "\n" + spec.Title, new Vector3(spec.Width * 0.5f, spec.Height - 3f, 0f), assets.LabelFont, 0.2f);
+
+            foreach (var h in spec.HazardSpots) BuildHazardSpot(hazards, h, assets.WhiteSprite);
+            foreach (var s in spec.Spikes) BuildSpikes(hazards, s, assets.WhiteSprite);
 
             var bounds = RoomBounds.Create(new Rect(0f, 0f, spec.Width, spec.Height));
             bounds.transform.SetParent(root.transform, false);
@@ -352,6 +395,48 @@ namespace Hollowknight.Silksong.Editor
             return go.transform;
         }
 
+        // How far inside the room the gate's hazard marker stands.
+        public const float GateMarkerInset = 3f;
+        public const float SpikeHeight = 1f, HazardTriggerHeight = 3f;
+
+        // A marker on a floor: the transform is a hair above the floor, so it finds the floor below (and still works
+        // if the search finds nothing). A small yellow strip shows it.
+        static HazardRespawnMarker BuildHazardMarker(Transform parent, string name, float x, float groundTop, bool facingRight, Sprite sprite)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+            go.transform.position = new Vector3(x, groundTop + 0.05f, 0f);
+            var marker = go.AddComponent<HazardRespawnMarker>();
+            marker.Configure(facingRight);
+            var strip = Visual(go.transform, "MarkerStrip", new Vector2(x, groundTop + 0.05f), new Vector2(0.6f, 0.1f), new Color(1f, 0.85f, 0.2f), sprite);
+            strip.sortingOrder = 1;
+            return marker;
+        }
+
+        static void BuildHazardSpot(Transform parent, HazardSpotSpec h, Sprite sprite)
+        {
+            var marker = BuildHazardMarker(parent, "HazardMarker_" + h.Name, h.MarkerX, h.GroundTop, h.FacingRight, sprite);
+            float cx = (h.TriggerMinX + h.TriggerMaxX) * 0.5f;
+            var vis = Visual(parent, "HazardTrigger_" + h.Name, new Vector2(cx, h.GroundTop + HazardTriggerHeight * 0.5f),
+                new Vector2(h.TriggerMaxX - h.TriggerMinX, HazardTriggerHeight), new Color(1f, 0.85f, 0.2f, 0.15f), sprite);
+            vis.sortingOrder = 1;
+            var box = vis.gameObject.AddComponent<BoxCollider2D>();
+            box.size = Vector2.one;   // the object's scale carries the real size
+            box.isTrigger = true;
+            vis.gameObject.AddComponent<HazardRespawnTrigger>().Configure(marker);
+        }
+
+        static void BuildSpikes(Transform parent, SpikeSpec s, Sprite sprite)
+        {
+            var vis = Visual(parent, "Spikes", new Vector2((s.MinX + s.MaxX) * 0.5f, s.GroundTop + SpikeHeight * 0.5f),
+                new Vector2(s.MaxX - s.MinX, SpikeHeight), new Color(0.85f, 0.15f, 0.15f), sprite);
+            vis.sortingOrder = 2;
+            var box = vis.gameObject.AddComponent<BoxCollider2D>();
+            box.size = Vector2.one;
+            box.isTrigger = true;
+            vis.gameObject.AddComponent<HazardZone>().SetRespawnsHero(true);
+        }
+
         static RespawnMarker BuildStart(Transform parent, RoomSpec spec, Sprite sprite)
         {
             var go = new GameObject("Start");
@@ -363,10 +448,17 @@ namespace Hollowknight.Silksong.Editor
             // A green strip at the feet, world-positioned.
             var strip = Visual(go.transform, "StartStrip", new Vector2(spec.StartX, 0.05f), new Vector2(1f, 0.1f), new Color(0.3f, 0.9f, 0.4f), sprite);
             strip.sortingOrder = 1;
+            if (spec.StartIsBench)
+            {
+                marker.SetBench(true);
+                // A bench-like seat beside the strip: where the hero comes back after dying in any room.
+                var seat = Visual(go.transform, "BenchSeat", new Vector2(spec.StartX + 1.6f, 0.3f), new Vector2(2f, 0.6f), new Color(0.55f, 0.35f, 0.2f), sprite);
+                seat.sortingOrder = 1;
+            }
             return marker;
         }
 
-        static void BuildGate(Transform parent, GateSpec g, RoomSpec spec, Sprite sprite)
+        static TransitionPoint BuildGate(Transform parent, GateSpec g, RoomSpec spec, Sprite sprite)
         {
             var go = new GameObject(g.Name);
             go.transform.SetParent(parent, false);
@@ -376,9 +468,11 @@ namespace Hollowknight.Silksong.Editor
             var box = go.AddComponent<BoxCollider2D>();
             box.size = new Vector2(GateWidth, GateHeight);
             box.isTrigger = true;
-            go.AddComponent<TransitionPoint>().Configure(g.TargetScene, g.EntryGate, Vector2.zero);
+            var point = go.AddComponent<TransitionPoint>();
+            point.Configure(g.TargetScene, g.EntryGate, Vector2.zero);
             var marker = Visual(go.transform, "GateMarker", go.transform.position, new Vector2(GateWidth, GateHeight), new Color(0.2f, 0.9f, 0.9f, 0.35f), sprite);
             marker.sortingOrder = 2;
+            return point;
         }
 
         // Room walls and ceiling. The side walls leave an opening at every gate.

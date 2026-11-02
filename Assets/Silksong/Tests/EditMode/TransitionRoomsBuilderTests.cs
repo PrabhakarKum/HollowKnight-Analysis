@@ -221,6 +221,94 @@ namespace Hollowknight.Silksong.Tests
             }
         }
 
+        // ---------- hazard respawn (task 8) ----------
+
+        [Test]
+        public void EachRoom_HasHazardSpotsAndSpikes_AtLeastTwoInTut01bAndTut02()
+        {
+            Assert.GreaterOrEqual(All<HazardRespawnTrigger>(Preview("Tut_01")).Count, 1);
+            Assert.GreaterOrEqual(All<HazardZone>(Preview("Tut_01")).Count, 1);
+            foreach (var name in new[] { "Tut_01b", "Tut_02" })
+            {
+                var scene = Preview(name);
+                Assert.GreaterOrEqual(All<HazardRespawnTrigger>(scene).Count, 2, name + ": triggers");
+                Assert.GreaterOrEqual(All<HazardZone>(scene).Count, 2, name + ": spikes");
+            }
+        }
+
+        [Test]
+        public void HazardTriggers_LinkAMarkerOfTheSameRoom_StandingOnTheFloor()
+        {
+            foreach (var name in TransitionRoomsBuilder.RoomNames)
+            {
+                var scene = Preview(name);
+                var solids = Solids(scene);
+                var markers = All<HazardRespawnMarker>(scene);
+                foreach (var trig in All<HazardRespawnTrigger>(scene))
+                {
+                    Assert.IsNotNull(trig.Marker, name + "/" + trig.name + ": no marker");
+                    Assert.AreEqual(scene, trig.Marker.gameObject.scene, name + "/" + trig.name + ": marker is in another scene");
+                    Assert.IsTrue(trig.GetComponent<BoxCollider2D>().isTrigger, name + "/" + trig.name);
+                }
+                foreach (var m in markers)
+                {
+                    Vector2 p = m.transform.position;
+                    Assert.IsTrue(solids.Any(s => s.xMin < p.x && s.xMax > p.x && Mathf.Abs(s.yMax - (p.y - 0.05f)) < 0.01f), name + "/" + m.name + ": not on a floor");
+                    Assert.IsFalse(solids.Any(s => s.Contains(p)), name + "/" + m.name + ": inside a solid");
+                }
+            }
+        }
+
+        [Test]
+        public void Spikes_StandOnFloors_AreTriggers_AndKeepClearOfStartAndGates()
+        {
+            foreach (var name in TransitionRoomsBuilder.RoomNames)
+            {
+                var scene = Preview(name);
+                var solids = Solids(scene);
+                Vector2 start = All<RoomWorldStarter>(scene)[0].StartPoint.transform.position;
+                foreach (var zone in All<HazardZone>(scene))
+                {
+                    Assert.IsTrue(zone.RespawnsHero, name + ": spikes must respawn the hero");
+                    var box = zone.GetComponent<BoxCollider2D>();
+                    Assert.IsTrue(box.isTrigger);
+                    var rect = WorldRect(box);
+                    Assert.IsTrue(solids.Any(s => Mathf.Abs(s.yMax - rect.yMin) < 0.01f && s.xMin < rect.xMax && s.xMax > rect.xMin), name + ": spikes float");
+                    Assert.IsFalse(rect.Contains(start), name + ": spikes on the start point");
+                    foreach (var g in All<TransitionPoint>(scene))
+                        Assert.IsFalse(rect.Overlaps(WorldRect(g.GetComponent<BoxCollider2D>())), name + ": spikes block gate " + g.name);
+                }
+            }
+        }
+
+        [Test]
+        public void EveryGate_HasAHazardMarkerInsideTheRoom_AndIsNotANonHazardGate()
+        {
+            foreach (var name in TransitionRoomsBuilder.RoomNames)
+            {
+                var scene = Preview(name);
+                var area = All<RoomInfo>(scene)[0].Bounds.Area;
+                foreach (var g in All<TransitionPoint>(scene))
+                {
+                    Assert.IsFalse(g.NonHazardGate, name + "/" + g.name);
+                    var m = g.HazardMarker;
+                    Assert.IsNotNull(m, name + "/" + g.name + ": no hazard marker");
+                    Assert.IsTrue(area.Contains(m.transform.position), name + "/" + g.name + ": marker outside the room");
+                }
+            }
+        }
+
+        [Test]
+        public void OnlyTut01_StartMarkerIsTheBench()
+        {
+            foreach (var name in TransitionRoomsBuilder.RoomNames)
+            {
+                var start = All<RoomWorldStarter>(Preview(name))[0].StartPoint;
+                Assert.AreEqual("Start", start.MarkerName);
+                Assert.AreEqual(name == "Tut_01", start.SetsBenchRespawn, name);
+            }
+        }
+
         // ---------- what a room must not hold ----------
 
         [Test]
