@@ -10,3 +10,4 @@ Features that call `Stubs.NotImplemented`, added automatically in the Editor.
 - tk2d RandomFrame/RandomLoop wrap modes (played as a plain loop)
 - Hero room: real Silksong room art and geometry (the room is plain blocks)
 - Hero hazard respawn
+- TransitionPoint.Door
