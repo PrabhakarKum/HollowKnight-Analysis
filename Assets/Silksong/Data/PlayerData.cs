@@ -33,6 +33,12 @@ namespace Hollowknight.Silksong
         // for the same reason as the fields above.
         public string currentScene = "";
 
+        // Like the original's SetHazardRespawn: remembers where to put the hero back after a hazard hit, and in which room.
+        public void SetHazardRespawn(string scene, string markerName, UnityEngine.Vector2 position, bool facingRight)
+        {
+            hazardRespawn = new HazardRespawn(markerName, position, facingRight, scene);
+        }
+
         // New-game values mirror the original's field defaults (see docs/study/03-data-and-saving.md).
         // Silk starts at 0 in the original: it is earned by fighting, not given.
         public static PlayerData CreateNew()

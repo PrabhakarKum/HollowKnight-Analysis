@@ -64,6 +64,30 @@ namespace Hollowknight.Silksong
         // The last marker the hero respawned at; used by the automatic respawn after a death.
         public RespawnMarker CurrentMarker { get; private set; }
 
+        // Additive (Milestone 2 task 8). When set, it is called ONCE when the death delay has passed, INSTEAD of the
+        // built-in "respawn at the marker in the live scenes" lookup. The world sets it so a death can send the hero to
+        // a bench in another room. Null (the default) keeps the old behaviour for every other scene.
+        public Action DeathRespawnHandler { get; set; }
+
+        // Additive (task 8). A hazard hit that does not kill: the hero is put back at a spot of the current room.
+        // Health stays as the hit left it; the hit's invulnerability window is kept; the knockback stun ends and the
+        // hero is stopped and made to fall at the spot. Not a respawn: markers and player respawn data are untouched.
+        public void PlaceAtHazard(Vector2 position, bool facingRight)
+        {
+            if (owner == null || dead) return;
+            stunRemaining = 0f;
+            stunActive = false;
+            CancelActions(true);
+            owner.Body.position = position;
+            owner.transform.position = new Vector3(position.x, position.y, owner.transform.position.z);
+            owner.Body.linearVelocity = Vector2.zero;
+            Physics2D.SyncTransforms();
+            owner.IsGrounded = false;
+            owner.FacingRight = facingRight;
+            owner.State = HeroState.Falling;
+            Stubs.NotImplemented("Hero hazard respawn fade and recovery animation");
+        }
+
         // Set by HeroTransitionDriver from the start of leaving a room until the hero has finished entering the next
         // one (the original's NO_DAMAGE mode). Not a timer, so it is kept apart from the hurt invulnerability.
         internal bool TransitionInvulnerable { get; set; }
@@ -194,6 +218,13 @@ namespace Hollowknight.Silksong
                     deathElapsed += dt;
                     if (deathElapsed + TimeEpsilon >= deathRespawnDelaySeconds)
                     {
+                        if (DeathRespawnHandler != null)
+                        {
+                            // Called once; the handler (or its later transition) owns the respawn from here.
+                            deathElapsed = float.NegativeInfinity;
+                            DeathRespawnHandler();
+                            return dead;
+                        }
                         var marker = CurrentMarker != null ? CurrentMarker : RespawnMarker.Find(data.respawnMarker);
                         if (marker != null)
                         {

@@ -26,10 +26,16 @@ namespace Hollowknight.Silksong
         // Heroes the zone currently believes are inside (for tests).
         public int InsideCount => inside.Count;
 
+        // Off by default so the first milestone's test room keeps its hurt-and-knockback behaviour. When on, a hit that
+        // does not kill puts the hero back at its hazard respawn spot in THIS room (see RespawnRules.ChooseHazardSpot).
+        [SerializeField] bool respawnsHero;
+        public bool RespawnsHero => respawnsHero;
+        public void SetRespawnsHero(bool value) => respawnsHero = value;
+
         void Awake()
         {
             zoneCollider = GetComponent<Collider2D>();
-            Stubs.NotImplemented("Hero hazard respawn");
+            if (!respawnsHero) Stubs.NotImplemented("Hero hazard respawn");
         }
 
         void OnTriggerEnter2D(Collider2D other) => Touch(other);
@@ -82,7 +88,28 @@ namespace Hollowknight.Silksong
         {
             if (health.IsDead) return;
             // TakeHit refuses while invulnerable, stunned or dead.
-            health.TakeHit(new HitInstance { Damage = Damage, Direction = AttackDirection.Normal, Source = gameObject });
+            bool landed = health.TakeHit(new HitInstance { Damage = Damage, Direction = AttackDirection.Normal, Source = gameObject });
+            if (landed && respawnsHero && !health.IsDead) RespawnHero(health);
+        }
+
+        // The hit is paid for; now the hero reappears at the saved spot of this room (a spot from another room is
+        // ignored and cleared), else at the room's Start marker, else stays where the knockback left it.
+        void RespawnHero(HeroHealth health)
+        {
+            var scene = gameObject.scene;
+            var data = health.Data;
+            var startMarker = RespawnMarker.Find(RespawnRules.StartMarkerName, scene);
+            var source = RespawnRules.ChooseHazardSpot(data.hazardRespawn, scene.name, startMarker != null);
+            if (RespawnRules.IsHazardSpotStale(data.hazardRespawn, scene.name)) data.hazardRespawn = new HazardRespawn();
+            switch (source)
+            {
+                case RespawnRules.HazardSpotSource.Saved:
+                    health.PlaceAtHazard(data.hazardRespawn.position, data.hazardRespawn.facingRight);
+                    break;
+                case RespawnRules.HazardSpotSource.RoomStart:
+                    health.PlaceAtHazard(startMarker.transform.position, startMarker.FacingRight);
+                    break;
+            }
         }
     }
 }

@@ -12,8 +12,18 @@ namespace Hollowknight.Silksong
         public string markerName;
         public Vector2 position;
         public bool facingRight = true;
+        // The room (scene name) the spot was saved in. The position is a plain world position and means nothing in
+        // any other room, so a spot from another room is ignored (see RespawnRules). Added later: old saves read it
+        // as empty, which counts as "room unknown" and is never used.
+        public string scene;
 
         public HazardRespawn() { }
+
+        public HazardRespawn(string markerName, Vector2 position, bool facingRight, string scene)
+            : this(markerName, position, facingRight)
+        {
+            this.scene = scene;
+        }
 
         public HazardRespawn(string markerName, Vector2 position, bool facingRight)
         {
