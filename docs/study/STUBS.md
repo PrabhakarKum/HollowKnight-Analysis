@@ -20,3 +20,6 @@ Features that call `Stubs.NotImplemented`, added automatically in the Editor.
 - Hero dash and sprint re-entry after a room change (only when the hero was dashing at leave)
 - Gate hardLandOnExit (hard landing after a top-gate arrival)
 - Gate alwaysEnterLeft/alwaysEnterRight facing at bottom gates
+- Transition rooms: exits Tut_01 left1 -> Tut_03, Tut_01 top1 -> Bonetown and Tut_01b right1 -> Weave_04 are not built
+- RoomWorldStarter: start menu and save slots (a room scene starts the world directly)
+- RoomWorldStarter: hero art needs Silksong/Import Hero Animations (a plain box is drawn)
