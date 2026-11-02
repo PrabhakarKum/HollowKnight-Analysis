@@ -90,6 +90,10 @@ namespace Hollowknight.Silksong.Tests
                 if (scene.IsValid() && scene.isLoaded) yield return SceneManager.UnloadSceneAsync(scene);
             }
             world = null;
+            // Standalone managers go last, after the scenes are unloaded.
+            foreach (var go in extras) if (go != null) UnityEngine.Object.Destroy(go);
+            extras.Clear();
+            yield return null;
             TransitionPoint.ResetHandlerForTests();
             GateRegistry.ClearForTests();
             Stubs.StubsDocPath = null;
@@ -153,12 +157,38 @@ namespace Hollowknight.Silksong.Tests
         IEnumerator Idle() => Until(() => !world.Manager.IsTransitionRunning && world.Manager.State == GameState.Playing
             && !world.Hero.ControlLocked, "transition to finish and hero control");
 
+        // Sends a request and waits for the whole change: first until it has started, then until it has finished
+        // (TransitionFinished raised, not running, Playing, and optionally a final condition). Listeners are added
+        // before the request so no event is missed.
+        IEnumerator RequestAndWait(RoomTransitionManager manager, TransitionRequest request, Func<bool> alsoTrue = null)
+        {
+            int started = 0, finished = 0;
+            Action<TransitionRequest> onStarted = r => started++;
+            Action<bool> onFinished = ok => finished++;
+            manager.TransitionStarted += onStarted;
+            manager.TransitionFinished += onFinished;
+            try
+            {
+                manager.RequestTransition(request);
+                yield return Until(() => started > 0, "the transition to start");
+                yield return Until(() => finished > 0 && !manager.IsTransitionRunning && manager.State == GameState.Playing
+                    && (alsoTrue == null || alsoTrue()), "the transition to finish");
+            }
+            finally
+            {
+                manager.TransitionStarted -= onStarted;
+                manager.TransitionFinished -= onFinished;
+            }
+        }
+
+        IEnumerator RequestAndWaitWorld(TransitionRequest request) =>
+            RequestAndWait(world.Manager, request, () => !world.Hero.ControlLocked);
+
         // Sends the hero through the named gate of the room it is in.
         IEnumerator Leave(string room, string gateName)
         {
             var gate = GateRegistry.Find(gateName, SceneManager.GetSceneByName(room));
-            world.Manager.RequestTransition(gate.BuildRequest());
-            yield return Idle();
+            yield return RequestAndWaitWorld(gate.BuildRequest());
         }
 
         static int Count<T>() where T : UnityEngine.Object =>
@@ -261,8 +291,7 @@ namespace Hollowknight.Silksong.Tests
             // The manager logs the loader's exception first, then its own summary.
             LogAssert.Expect(LogType.Exception, new System.Text.RegularExpressions.Regex("cannot be loaded"));
             LogAssert.Expect(LogType.Error, new System.Text.RegularExpressions.Regex(FailedOld));
-            world.Manager.RequestTransition(gate.BuildRequest());
-            yield return Idle();
+            yield return RequestAndWaitWorld(gate.BuildRequest());
 
             Assert.IsTrue(SceneManager.GetSceneByName(nameA).isLoaded, "A is still loaded");
             Assert.AreEqual(nameA, SceneManager.GetActiveScene().name);
@@ -418,14 +447,6 @@ namespace Hollowknight.Silksong.Tests
             return manager;
         }
 
-        [UnityTearDown]
-        public IEnumerator DestroyExtras()
-        {
-            foreach (var go in extras) if (go != null) UnityEngine.Object.Destroy(go);
-            extras.Clear();
-            yield return null;
-        }
-
         [UnityTest]
         public IEnumerator SameRoomRequest_IsRejected_BeforeAnythingMoves()
         {
@@ -502,8 +523,7 @@ namespace Hollowknight.Silksong.Tests
             var manager = MakeStandaloneManager(loader, new StubHero(false));
             LogAssert.Expect(LogType.Exception, new System.Text.RegularExpressions.Regex("activate-boom"));
             LogAssert.Expect(LogType.Error, new System.Text.RegularExpressions.Regex(FailedOld));
-            manager.RequestTransition(new TransitionRequest { TargetScene = "Elsewhere", EntryGate = "left1", LeaveDirection = GatePosition.Right });
-            yield return Until(() => !manager.IsTransitionRunning && manager.State == GameState.Playing, "recovery");
+            yield return RequestAndWait(manager, new TransitionRequest { TargetScene = "Elsewhere", EntryGate = "left1", LeaveDirection = GatePosition.Right });
             Assert.GreaterOrEqual(loader.Abandoned, 1);
             Assert.AreEqual(1, loader.Finished);
         }
@@ -522,8 +542,7 @@ namespace Hollowknight.Silksong.Tests
 
             LogAssert.Expect(LogType.Error, new System.Text.RegularExpressions.Regex("hero was not placed"));
             var gate = GateRegistry.Find("right1", SceneManager.GetSceneByName(nameA));
-            manager.RequestTransition(gate.BuildRequest());
-            yield return Until(() => !manager.IsTransitionRunning && manager.State == GameState.Playing, "change to end");
+            yield return RequestAndWait(manager, gate.BuildRequest());
 
             Assert.AreEqual(0, placed);
             Assert.IsTrue(finishedOk);
@@ -550,8 +569,7 @@ namespace Hollowknight.Silksong.Tests
 
             LogAssert.Expect(LogType.Error, new System.Text.RegularExpressions.Regex("no gates in the searched room"));
             LogAssert.Expect(LogType.Error, new System.Text.RegularExpressions.Regex(@"\[Transition\] Failed: .*old room is already gone"));
-            world.Manager.RequestTransition(gate.BuildRequest());
-            yield return Idle();
+            yield return RequestAndWaitWorld(gate.BuildRequest());
 
             var infoC = RoomWorldBootstrap.FindRoomInfo(SceneManager.GetSceneByName(nameC));
             Assert.AreSame(infoC.Bounds, world.RoomCamera.Bounds, "camera follows the room that is live");
@@ -591,8 +609,7 @@ namespace Hollowknight.Silksong.Tests
             int started = 0;
             world.Manager.TransitionStarted += r => started++;
 
-            world.Manager.RequestTransition(gate.BuildRequest());
-            yield return Idle();
+            yield return RequestAndWaitWorld(gate.BuildRequest());
 
             Assert.AreEqual(1, started);
             Assert.AreEqual(nameB, SceneManager.GetActiveScene().name);
