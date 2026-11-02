@@ -42,7 +42,17 @@ namespace Hollowknight.Silksong
         public AdditiveRoomLoader Loader { get; private set; }
         public RoomTransitionSettings Settings => settings;
         // In-memory only. Saving to disk after a room change is a stub (see RecordRoom).
-        public PlayerData PlayerData { get; set; } = PlayerData.CreateNew();
+        // The hero's HeroHealth uses this same object (task 8), so hazard and bench respawn data is one record.
+        public PlayerData PlayerData
+        {
+            get => playerData;
+            set
+            {
+                playerData = value ?? PlayerData.CreateNew();
+                if (hero != null && hero.Health != null) hero.Health.Data = playerData;
+            }
+        }
+        PlayerData playerData = PlayerData.CreateNew();
 
         // Code-injected pieces (not serialized), set by Create before Awake.
         IHeroInput injectedInput;
@@ -86,6 +96,7 @@ namespace Hollowknight.Silksong
 
             BuildHero();
             BuildCamera();
+            if (hero.Health != null) hero.Health.Data = playerData;
 
             Fader = GetComponent<ScreenFader>();
             if (Fader == null) Fader = gameObject.AddComponent<ScreenFader>();
@@ -254,6 +265,19 @@ namespace Hollowknight.Silksong
         void OnHeroPlaced(Scene scene, TransitionPoint arrival)
         {
             if (gameCamera != null && hero != null) gameCamera.SnapTo(hero.transform.position, hero.FacingRight);
+            RecordHazardSpot(scene, arrival);
+        }
+
+        // Arrival sets the hazard respawn spot (the original's FinishedEnteringScene). arrival is null after a death
+        // respawn, which has no gate: the bench spot where the hero now stands is used.
+        void RecordHazardSpot(Scene scene, TransitionPoint arrival)
+        {
+            if (hero == null) return;
+            Vector2 pos = hero.transform.position;
+            if (arrival != null)
+                RespawnRules.ApplyGateArrival(PlayerData, scene.name, arrival.NonHazardGate, arrival.HazardMarker, pos, hero.FacingRight);
+            else
+                PlayerData.SetHazardRespawn(scene.name, "Respawn", pos, hero.FacingRight);
         }
 
         void OnTransitionFinished(bool success)

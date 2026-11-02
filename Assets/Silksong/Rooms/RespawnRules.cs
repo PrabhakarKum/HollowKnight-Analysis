@@ -29,6 +29,22 @@ namespace Hollowknight.Silksong
             return roomHasStartMarker ? HazardSpotSource.RoomStart : HazardSpotSource.None;
         }
 
+        // Arriving through a gate (the original's FinishedEnteringScene): the gate's hazard marker becomes the spot,
+        // unless the gate is a nonHazardGate (then nothing is set, and a spot left from another room is cleared).
+        // A gate without a marker uses the hero's own arrival position.
+        public static void ApplyGateArrival(PlayerData data, string room, bool nonHazardGate, HazardRespawnMarker marker,
+            UnityEngine.Vector2 heroPosition, bool heroFacingRight)
+        {
+            if (data == null || string.IsNullOrEmpty(room)) return;
+            if (nonHazardGate)
+            {
+                if (IsHazardSpotStale(data.hazardRespawn, room)) data.hazardRespawn = new HazardRespawn();
+                return;
+            }
+            if (marker != null) data.SetHazardRespawn(room, marker.name, marker.SpawnPosition, marker.FacingRight);
+            else data.SetHazardRespawn(room, "Arrival", heroPosition, heroFacingRight);
+        }
+
         public struct DeathTarget
         {
             public bool InPlace;       // true: the bench room is the room the hero died in

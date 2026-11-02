@@ -32,6 +32,20 @@ namespace Hollowknight.Silksong
         // Extra seconds to wait before walking in, when this gate is the arrival gate.
         [SerializeField] float entryDelay;
 
+        // Which hazard respawn spot is set when the hero arrives here (the original's nonHazardGate / respawnMarker).
+        // nonHazardGate: arriving here does not set one. No marker given: a HazardRespawnMarker child of the gate is used.
+        [SerializeField] bool nonHazardGate;
+        [SerializeField] HazardRespawnMarker respawnMarker;
+
+        public bool NonHazardGate => nonHazardGate;
+        public HazardRespawnMarker HazardMarker => respawnMarker != null ? respawnMarker : GetComponentInChildren<HazardRespawnMarker>(true);
+
+        public void ConfigureHazard(HazardRespawnMarker marker, bool nonHazard = false)
+        {
+            respawnMarker = marker;
+            nonHazardGate = nonHazard;
+        }
+
         // Set once this gate fired so OnTriggerStay does not send the request every physics step.
         bool activated;
 
