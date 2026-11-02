@@ -22,7 +22,7 @@ namespace Hollowknight.Silksong.Tests
             foreach (var go in created) if (go != null) Object.DestroyImmediate(go);
             created.Clear();
             foreach (var s in scenes)
-                if (s.IsValid()) UnityEditor.SceneManagement.EditorSceneManager.CloseScene(s, true);
+                if (s.IsValid()) UnityEditor.SceneManagement.EditorSceneManager.ClosePreviewScene(s);
             scenes.Clear();
         }
 
@@ -43,8 +43,8 @@ namespace Hollowknight.Silksong.Tests
 
         UnityEngine.SceneManagement.Scene NewScene()
         {
-            var s = UnityEditor.SceneManagement.EditorSceneManager.NewScene(
-                UnityEditor.SceneManagement.NewSceneSetup.EmptyScene, UnityEditor.SceneManagement.NewSceneMode.Additive);
+            // Preview scenes work even when the active scene is untitled (batch runs), unlike additive NewScene.
+            var s = UnityEditor.SceneManagement.EditorSceneManager.NewPreviewScene();
             scenes.Add(s);
             return s;
         }
