@@ -28,6 +28,10 @@ namespace Hollowknight.Silksong
         public string mapZone = "TUT_01";
         public HazardRespawn hazardRespawn = new HazardRespawn();
         public SceneData sceneData = new SceneData();
+        // The room the player is in right now (written on every completed room change). Unlike respawnScene, which
+        // only changes at benches / respawn markers, this is plain tracking. Empty in old saves; no version bump,
+        // for the same reason as the fields above.
+        public string currentScene = "";
 
         // New-game values mirror the original's field defaults (see docs/study/03-data-and-saving.md).
         // Silk starts at 0 in the original: it is earned by fighting, not given.

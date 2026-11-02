@@ -13,12 +13,16 @@ namespace Hollowknight.Silksong
         // depends on a zone enum that does not exist yet.
         [SerializeField] int mapZoneId = 13;
         [SerializeField] string mapZoneName = "Moss Cave";
+        // The stable key stored in PlayerData.mapZone (same convention as its "TUT_01" default). MapZoneName above is
+        // display text only and must never be saved.
+        [SerializeField] string mapZoneKey = "TUT_01";
         [SerializeField] RoomBounds bounds;
 
         // The scene name when none was set, so a room built from code still has a usable key.
         public string SceneName => string.IsNullOrEmpty(sceneName) ? gameObject.scene.name : sceneName;
         public int MapZoneId => mapZoneId;
         public string MapZoneName => mapZoneName;
+        public string MapZoneKey => mapZoneKey;
         public RoomBounds Bounds => bounds;
 
         void Awake()
@@ -27,8 +31,9 @@ namespace Hollowknight.Silksong
         }
 
         // For rooms built from code (tests, generated scenes).
-        public void Configure(string scene, int zoneId, string zoneName, RoomBounds roomBounds)
+        public void Configure(string scene, int zoneId, string zoneName, RoomBounds roomBounds, string zoneKey = null)
         {
+            if (zoneKey != null) mapZoneKey = zoneKey;
             sceneName = scene;
             mapZoneId = zoneId;
             mapZoneName = zoneName;

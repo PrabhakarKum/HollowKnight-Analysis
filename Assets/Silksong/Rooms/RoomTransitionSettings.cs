@@ -25,6 +25,12 @@ namespace Hollowknight.Silksong
         public float fadeOutSeconds = 0.25f;
         public float fadeInSeconds = 0.3f;
 
+        // Longest the loader waits (real time, unaffected by timeScale) for a room to load or integrate before it
+        // gives up with an error, so the manager's recovery runs instead of the game sitting on a black screen.
+        // Not from the original; a guard. 0 or less means "fail at the first check" (used by tests).
+        public const float DefaultLoadTimeoutSeconds = 30f;
+        public float loadTimeoutSeconds = DefaultLoadTimeoutSeconds;
+
         // Null when the values make sense; otherwise a warning text. A fade-out as long as the wait means the
         // room could be swapped while the screen is still partly visible.
         public string ValidationWarning()
