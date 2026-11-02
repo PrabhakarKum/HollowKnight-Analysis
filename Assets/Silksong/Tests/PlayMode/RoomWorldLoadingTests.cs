@@ -442,6 +442,9 @@ namespace Hollowknight.Silksong.Tests
         {
             var go = new GameObject("StandaloneManager");
             extras.Add(go);
+            // Outside any room scene: a real room swap unloads the active scene, and a manager living in it would be
+            // destroyed mid-transition (OnDestroy aborts the run).
+            UnityEngine.Object.DontDestroyOnLoad(go);
             var manager = go.AddComponent<RoomTransitionManager>();
             manager.Configure(loader, new InstantFader(), hero, Instant());
             return manager;
