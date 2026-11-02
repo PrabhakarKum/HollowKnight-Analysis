@@ -20,6 +20,12 @@ namespace Hollowknight.Silksong
         public string respawnScene;
         public string respawnMarker;
 
+        // Added after version 1 shipped. JsonUtility leaves keys missing from an old file at these initialisers,
+        // so old saves load unchanged and no version bump is needed.
+        public string mapZone = "TUT_01";
+        public HazardRespawn hazardRespawn = new HazardRespawn();
+        public SceneData sceneData = new SceneData();
+
         // New-game values mirror the original's field defaults (see docs/study/03-data-and-saving.md).
         // Silk starts at 0 in the original: it is earned by fighting, not given.
         public static PlayerData CreateNew()
@@ -33,6 +39,9 @@ namespace Hollowknight.Silksong
                 maxSilk = 9,
                 respawnScene = "Tut_01",
                 respawnMarker = "Death Respawn Marker Init",
+                mapZone = "TUT_01",
+                hazardRespawn = new HazardRespawn(),
+                sceneData = new SceneData(),
             };
         }
     }
