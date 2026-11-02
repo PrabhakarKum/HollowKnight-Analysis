@@ -3,14 +3,6 @@ using UnityEngine;
 
 namespace Hollowknight.Silksong
 {
-    // Optional extra for a transition hero: lets the room manager give the controls back and clear invulnerability if
-    // a transition is abandoned half way (a failed load, a cancel). Declared by the transition manager task as well
-    // under this exact name; the duplicate is removed when the branches are merged.
-    public interface ITransitionHeroRecovery
-    {
-        void RestoreControl();
-    }
-
     // The hero's side of changing rooms: walking out of a room (LeaveRoom) and being placed and walked into the next
     // one (EnterRoom). Rules and numbers come from docs/study/10-room-transitions.md section 3; the tuning numbers the
     // hero owns are HeroConfig.Transition* fields.

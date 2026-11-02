@@ -257,7 +257,7 @@ bench was in room A) needs the transition manager to load `respawnScene` and use
 
 Already in the repo: `Rooms/GameCamera.cs` (follow, look-ahead, `SnapToTarget`, `Bounds`) and `Rooms/RoomBounds.cs`
 (a rectangle placed by hand, with the same 14.6/8.3 insets). M2 needs: `GameCamera.Bounds` swapped per room,
-`SnapToTarget` called when the hero is in position, a hold (freeze) while fading, and the "facing inward" nudge.
+`SnapToTarget` called when the hero is in position, a hold (freeze) while fading. (The original also has an "inward edge nudge", but reading the source shows it only runs with lock-area offsets, so it was not built; see 08-camera.md.)
 **Stub:** camera lock areas in the first pass (`Rooms/CameraLockZone` later), shake, FOV offsets, forced aspect.
 Note the owner prototype has `Assets/Scripts/Camera/CameraLockZone.cs`; do not touch it.
 
@@ -321,7 +321,7 @@ neighbours were not checked for size.
 | Hero enter/leave | `Hero/HeroTransitionDriver`, `HeroController` input lock hook | dash/sprint re-entry, door anims | OK to touch `HeroController` and add fields to `HeroConfig` in M2? |
 | Room data | `Rooms/RoomInfo` (map zone, bounds), `Rooms/SceneData` | colours, light, audio, particles | Do pickups/breakables need to stay broken after leaving a room in M2? |
 | Hazard respawn | `Rooms/HazardRespawnMarker`, `Rooms/HazardRespawnTrigger`, `PlayerData` fields | respawn cinematics | Is the hazard spot kept in the save file? (original: yes, `hazardRespawnLocation`) |
-| Camera | `GameCamera` per-room `Bounds`, snap-on-entry, freeze while fading, edge nudge | lock areas (later `Rooms/CameraLockZone`), shake | Are lock areas needed for the grey-box rooms or only when real rooms arrive? |
+| Camera | `GameCamera` per-room `Bounds`, snap-on-entry, freeze while fading | lock areas (later `Rooms/CameraLockZone`), shake | Are lock areas needed for the grey-box rooms or only when real rooms arrive? |
 | Rooms | grey-box builder for Tut_01, Tut_01b, Tut_02 with the gate names above | everything outside those three rooms | Grey-box rooms, or import real geometry? Which rooms (my pick: Tut_01, Tut_01b, Tut_02)? |
 
 Other open questions: fade durations (the original's fade lengths live inside the PlayMaker Screen Fader FSM; I
@@ -352,7 +352,7 @@ PlayMode with a fake loader, so tests need no real room scenes until Task 7.
    placed at gate + offset on the ground, faces right, walks 0.33 s, control returns after, invulnerable until then;
    top and bottom variants. *Parallel with 2, 3, 5; the only task that edits `HeroController`.*
 5. **Camera on entry and room bounds** (`Rooms/GameCamera` snap-and-hold, `Rooms/RoomInfo.cs`, bounds swap).
-   Tests: camera jumps to the hero inside new bounds, stays frozen 0.1 s, edge nudge when facing inward.
+   Tests: camera jumps to the hero inside new bounds, stays frozen 0.1 s. (The original edge nudge is dead without lock areas; see 08-camera.md.)
    *Parallel with 2, 3, 4.*
 6. **Real room loading** (`Rooms/AdditiveRoomLoader.cs`, persistent bootstrap holding hero, camera, manager and
    fader). PlayMode test with two tiny test scenes: leave A, arrive in B at the named gate, A is gone, hero object is
