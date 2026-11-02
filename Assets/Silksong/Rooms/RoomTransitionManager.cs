@@ -6,16 +6,19 @@ using UnityEngine.SceneManagement;
 
 namespace Hollowknight.Silksong
 {
-    // Optional extra for the hero side: give control back after a transition failed. ITransitionHero (frozen)
-    // has no such call, and EnterRoom needs a gate, which may not exist after a failed load.
-    public interface ITransitionHeroRecovery
-    {
-        void RestoreControl();
-    }
-
     // Runs a room change: PLAYING -> EXITING_LEVEL -> (load hidden) -> ENTERING_LEVEL -> PLAYING.
     // A small slice of the original GameManager.BeginSceneTransitionRoutine. All work with the outside world goes
     // through IRoomLoader, IScreenFader and ITransitionHero so it is tested with fakes.
+    //
+    // Failure policy (the player must never end up locked or looking at a black screen):
+    //  - A failure BEFORE ActivateAndUnloadPrevious completes recovers into the OLD room: fade in, hero control
+    //    back (ITransitionHeroRecovery.RestoreControl, or EnterRoom on the sending gate if the hero has no
+    //    recovery hook), State Playing.
+    //  - A failure AFTER the swap (new scene not loaded, no gates in it) is "fatal but safe": the old room is
+    //    already gone and cannot come back, so the manager logs that, unlocks the hero, fades in and goes to
+    //    Playing in whatever the new room is. A hero WITHOUT ITransitionHeroRecovery stays locked then (there is
+    //    no gate to enter through); this is logged as an error.
+    //  - Any exception anywhere in the sequence ends in the same "restore everything" path.
     public class RoomTransitionManager : MonoBehaviour, ITransitionRequestHandler
     {
         public RoomTransitionSettings Settings = new RoomTransitionSettings();
@@ -24,46 +27,110 @@ namespace Hollowknight.Silksong
         IScreenFader fader;
         ITransitionHero hero;
         Coroutine routine;
+        Coroutine activeFade;
         bool running;
+        bool loggedMissingCollaborators;
 
         public GameState State { get; private set; } = GameState.Playing;
         public bool IsTransitionRunning => running;
 
-        // Wires the collaborators. Called by the bootstrap (Task 6) or a test.
-        public void Configure(IRoomLoader roomLoader, IScreenFader screenFader, ITransitionHero transitionHero)
+        // Wires the collaborators. Called by the bootstrap (Task 6) or a test. Passing settings makes the manager
+        // and a ScreenFader share ONE settings object.
+        public void Configure(IRoomLoader roomLoader, IScreenFader screenFader, ITransitionHero transitionHero,
+            RoomTransitionSettings settings = null)
         {
             loader = roomLoader;
             fader = screenFader;
             hero = transitionHero;
+            if (settings != null) Settings = settings;
+            if (fader is ScreenFader sf && sf != null) sf.Configure(Settings);
+            loggedMissingCollaborators = false;
+
+            string warning = Settings.ValidationWarning();
+            if (warning != null) Debug.LogWarning("[Transition] " + warning);
         }
 
         void OnEnable() => TransitionPoint.Handler = this;
 
         // Both, because a destroyed manager must never stay referenced by the static gate handler.
-        void OnDisable() => ClearHandler();
-        void OnDestroy() => ClearHandler();
+        void OnDisable()
+        {
+            AbortIfBusy();
+            ClearHandler();
+        }
+
+        void OnDestroy()
+        {
+            AbortIfBusy();
+            ClearHandler();
+        }
 
         void ClearHandler()
         {
             if (ReferenceEquals(TransitionPoint.Handler, this)) TransitionPoint.Handler = null;
         }
 
+        void AbortIfBusy()
+        {
+            if (running || routine != null || State != GameState.Playing) Abort();
+        }
+
+        // Synchronous "put everything back": used when the manager is switched off mid-transition and when the
+        // sequence itself throws. Best effort, never throws.
+        void Abort()
+        {
+            StopAllCoroutines();
+            activeFade = null;
+            routine = null;
+            running = false;
+            State = GameState.Playing;
+            try
+            {
+                if (fader is ScreenFader sf && sf != null) sf.SetAlpha(0f);
+                if (hero is ITransitionHeroRecovery recovery) recovery.RestoreControl();
+            }
+            catch (Exception ex)
+            {
+                Debug.LogException(ex);
+            }
+        }
+
         public void RequestTransition(TransitionRequest request)
         {
-            // EnteringLevel is accepted: a bottom gate may be left straight after arriving (TransitionRules).
-            bool stateOk = State == GameState.Playing || State == GameState.EnteringLevel;
-            bool valid = !string.IsNullOrEmpty(request.TargetScene) && !string.IsNullOrEmpty(request.EntryGate);
-            if (running || !stateOk || !valid || loader == null || fader == null || hero == null)
+            if (loader == null || fader == null || hero == null)
             {
-                Debug.LogWarning($"[Transition] Request to '{request.TargetScene}' rejected (running={running}, state={State}, valid={valid}).");
-                // The gate marked itself activated when it sent this; let it fire again.
-                foreach (var gate in FindGates(request)) gate.ResetActivation();
+                // Logged once until Configure is called again: a gate in a stay-loop would flood the console.
+                if (!loggedMissingCollaborators)
+                {
+                    loggedMissingCollaborators = true;
+                    Debug.LogWarning("[Transition] Request rejected: loader, fader or hero is not configured.");
+                }
+                ReleaseGates(request);
                 return;
             }
 
-            // A walk-in still in progress is abandoned: the new request takes over the hero.
+            // EnteringLevel is accepted: a bottom gate may be left straight after arriving (TransitionRules).
+            bool stateOk = State == GameState.Playing || State == GameState.EnteringLevel;
+            bool valid = !string.IsNullOrEmpty(request.TargetScene) && !string.IsNullOrEmpty(request.EntryGate);
+            if (running || !stateOk || !valid)
+            {
+                Debug.LogWarning($"[Transition] Request to '{request.TargetScene}' rejected (running={running}, state={State}, valid={valid}).");
+                ReleaseGates(request);
+                return;
+            }
+
+            // A walk-in still in progress is abandoned: the new request takes over the hero. Its fade-in must
+            // stop too, or it would fight the next fade-out.
             if (routine != null) StopCoroutine(routine);
-            routine = StartCoroutine(Run(request));
+            if (activeFade != null) StopCoroutine(activeFade);
+            activeFade = null;
+            routine = StartCoroutine(Guard(Run(request)));
+        }
+
+        // The gate marked itself activated when it sent this; let it fire again.
+        static void ReleaseGates(TransitionRequest request)
+        {
+            foreach (var gate in FindGates(request)) gate.ResetActivation();
         }
 
         // The request does not say which gate sent it, so find gates that would build this same request.
@@ -84,38 +151,37 @@ namespace Hollowknight.Silksong
             running = true;
             State = GameState.ExitingLevel;
             var senders = FindGates(request);   // looked up now: the old room is gone after the swap
+            Exception err = null;
 
-            hero.LeaveRoom(request.LeaveDirection);   // locks control from here on
+            try { hero.LeaveRoom(request.LeaveDirection); }   // locks control from here on
+            catch (Exception ex) { err = ex; }
+            if (err != null) { yield return Fail(err, "hero.LeaveRoom threw", senders, false); yield break; }
 
             // Fade and the fixed wait run side by side: the new room may only go live when both are done.
-            var fade = StartCoroutine(fader.FadeOut());
+            var fade = StartFade(fader.FadeOut(), ex => err = ex);
             yield return new WaitForSecondsRealtime(Settings.fadeWaitSeconds);
             yield return fade;
+            if (err != null) { yield return Fail(err, "fade out failed", senders, false); yield break; }
 
-            string error = null;
-            yield return RunGuarded(loader.LoadHidden(request.TargetScene), e => error = e);
-            if (error == null)
-                yield return RunGuarded(loader.ActivateAndUnloadPrevious(), e => error = e);
+            yield return Stage(loader.LoadHidden(request.TargetScene), ex => err = ex);
+            if (err != null) { yield return Fail(err, "loading the room failed", senders, false); yield break; }
 
-            TransitionPoint arrival = null;
-            if (error == null)
+            yield return Stage(loader.ActivateAndUnloadPrevious(), ex => err = ex);
+            if (err != null) { yield return Fail(err, "activating the room failed", senders, false); yield break; }
+
+            // From here the old room is gone.
+            var scene = SceneManager.GetSceneByName(request.TargetScene);
+            if (!scene.IsValid() || !scene.isLoaded)
             {
-                var scene = SceneManager.GetSceneByName(request.TargetScene);
-                if (!scene.IsValid() || !scene.isLoaded)
-                {
-                    error = $"scene '{request.TargetScene}' is not loaded after activation";
-                }
-                else
-                {
-                    // Scoped to the NEW room: both rooms use names like left1 / right1.
-                    arrival = GateRegistry.Find(request.EntryGate, scene);
-                    if (arrival == null) error = $"scene '{request.TargetScene}' has no gates";
-                }
+                yield return Fail(null, $"scene '{request.TargetScene}' is not loaded after activation", senders, true);
+                yield break;
             }
 
-            if (error != null)
+            // Scoped to the NEW room: both rooms use names like left1 / right1.
+            var arrival = GateRegistry.Find(request.EntryGate, scene);
+            if (arrival == null)
             {
-                yield return Recover(senders, error);
+                yield return Fail(null, $"scene '{request.TargetScene}' has no gates", senders, true);
                 yield break;
             }
 
@@ -126,29 +192,41 @@ namespace Hollowknight.Silksong
             running = false;   // gates may fire again now (bottom-gate exception)
 
             yield return new WaitForSecondsRealtime(Settings.heroWaitSeconds);
-            var fadeIn = StartCoroutine(fader.FadeIn());
-            yield return hero.EnterRoom(arrival, request.EntryDelay + arrival.EntryDelay);
+            var fadeIn = StartFade(fader.FadeIn(), ex => err = ex);
+            yield return Stage(hero.EnterRoom(arrival, request.EntryDelay + arrival.EntryDelay), ex => err = ex);
             yield return fadeIn;
+            if (err != null) { yield return Fail(err, "entering the room failed", senders, true); yield break; }
 
             State = GameState.Playing;
             routine = null;
         }
 
-        IEnumerator Recover(List<TransitionPoint> senders, string error)
+        IEnumerator Fail(Exception error, string message, List<TransitionPoint> senders, bool oldRoomGone)
         {
-            Debug.LogError($"[Transition] Failed: {error}. Restoring play.");
-            yield return fader.FadeIn();
+            if (error != null) Debug.LogException(error);
+            Debug.LogError(oldRoomGone
+                ? $"[Transition] Failed: {message}. The old room is already gone; unlocking the hero in the current room."
+                : $"[Transition] Failed: {message}. Returning to the old room.");
+
+            Exception fadeError = null;
+            yield return StartFade(fader.FadeIn(), ex => fadeError = ex);
+            if (fadeError != null) Debug.LogException(fadeError);
 
             if (hero is ITransitionHeroRecovery recovery)
             {
-                recovery.RestoreControl();
+                try { recovery.RestoreControl(); }
+                catch (Exception ex) { Debug.LogException(ex); }
             }
             else
             {
                 TransitionPoint back = null;
-                foreach (var g in senders) if (g != null) { back = g; break; }
-                if (back != null) yield return hero.EnterRoom(back, 0f);
-                else Debug.LogError("[Transition] No way to give the hero control back (no recovery hook and no sending gate).");
+                if (!oldRoomGone)
+                    foreach (var g in senders) if (g != null) { back = g; break; }
+
+                if (back != null)
+                    yield return Stage(hero.EnterRoom(back, 0f), Debug.LogException);
+                else
+                    Debug.LogError("[Transition] The hero has no recovery hook and no sending gate exists: it stays locked.");
             }
 
             foreach (var g in senders) if (g != null) g.ResetActivation();
@@ -157,9 +235,16 @@ namespace Hollowknight.Silksong
             routine = null;
         }
 
-        // Steps an enumerator by hand so an exception from the loader is caught and reported, not thrown
-        // out of the manager's coroutine (which would freeze the game in EXITING_LEVEL).
-        static IEnumerator RunGuarded(IEnumerator inner, Action<string> onError)
+        // Starts a fade and remembers it, cancelling the previous one so a stale fade-in cannot undo a fade-out.
+        Coroutine StartFade(IEnumerator fade, Action<Exception> onError)
+        {
+            if (activeFade != null) StopCoroutine(activeFade);
+            activeFade = StartCoroutine(Stage(fade, onError));
+            return activeFade;
+        }
+
+        // Last line of defence: anything not caught by a stage ends in Abort, never in a frozen state.
+        IEnumerator Guard(IEnumerator inner)
         {
             while (true)
             {
@@ -169,9 +254,31 @@ namespace Hollowknight.Silksong
                     if (!inner.MoveNext()) yield break;
                     current = inner.Current;
                 }
-                catch (Exception e)
+                catch (Exception ex)
                 {
-                    onError(e.Message);
+                    Debug.LogException(ex);
+                    Abort();
+                    yield break;
+                }
+                yield return current;
+            }
+        }
+
+        // Steps an enumerator by hand so an exception from a collaborator is caught and reported, not thrown
+        // out of the manager's coroutine (which would freeze the game in EXITING_LEVEL).
+        static IEnumerator Stage(IEnumerator inner, Action<Exception> onError)
+        {
+            while (true)
+            {
+                object current;
+                try
+                {
+                    if (!inner.MoveNext()) yield break;
+                    current = inner.Current;
+                }
+                catch (Exception ex)
+                {
+                    onError(ex);
                     yield break;
                 }
                 yield return current;

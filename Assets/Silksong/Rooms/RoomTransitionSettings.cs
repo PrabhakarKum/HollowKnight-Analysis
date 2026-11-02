@@ -4,6 +4,7 @@ namespace Hollowknight.Silksong
 {
     // Timings of a room change. Kept here and not in HeroConfig (a frozen contract that belongs to the hero).
     // Instance fields (not const) so tests can shrink the waits to zero and the owner can tune in the Inspector.
+    // One object is shared by RoomTransitionManager and ScreenFader so there is a single source of truth.
     [Serializable]
     public class RoomTransitionSettings
     {
@@ -23,5 +24,14 @@ namespace Hollowknight.Silksong
         // when the wait ends.
         public float fadeOutSeconds = 0.25f;
         public float fadeInSeconds = 0.3f;
+
+        // Null when the values make sense; otherwise a warning text. A fade-out as long as the wait means the
+        // room could be swapped while the screen is still partly visible.
+        public string ValidationWarning()
+        {
+            if (fadeOutSeconds >= fadeWaitSeconds)
+                return $"fadeOutSeconds ({fadeOutSeconds}) should be shorter than fadeWaitSeconds ({fadeWaitSeconds}), or the old room may be seen while it unloads.";
+            return null;
+        }
     }
 }

@@ -8,26 +8,48 @@ namespace Hollowknight.Silksong
     // Fades run on unscaled time so a paused or slowed game still fades.
     public class ScreenFader : MonoBehaviour, IScreenFader
     {
-        public RoomTransitionSettings Settings = new RoomTransitionSettings();
+        RoomTransitionSettings settings = new RoomTransitionSettings();
 
         Texture2D pixel;
         float alpha;
+        // Only the newest fade may move the alpha; an older, still running fade stops itself.
+        int fadeId;
+
+        public RoomTransitionSettings Settings => settings;
+
+        // Shares the settings object with the transition manager so fade lengths have one source.
+        public void Configure(RoomTransitionSettings shared)
+        {
+            if (shared != null) settings = shared;
+        }
 
         // 0 = game visible, 1 = fully black.
         public float Alpha => alpha;
 
-        // Jumps without animating (used at start-up and by tests).
-        public void SetAlpha(float value) => alpha = Mathf.Clamp01(value);
+        // Jumps without animating (start-up, tests, emergency restore). Also cancels any running fade.
+        public void SetAlpha(float value)
+        {
+            fadeId++;
+            Apply(Mathf.Clamp01(value));
+        }
 
-        public IEnumerator FadeOut() => Fade(1f, Settings.fadeOutSeconds);
+        // OnGUI is only called while the behaviour is enabled, so keep it off while nothing is drawn.
+        void Apply(float value)
+        {
+            alpha = value;
+            enabled = value > 0f;
+        }
 
-        public IEnumerator FadeIn() => Fade(0f, Settings.fadeInSeconds);
+        public IEnumerator FadeOut() => Fade(1f, settings.fadeOutSeconds);
+
+        public IEnumerator FadeIn() => Fade(0f, settings.fadeInSeconds);
 
         IEnumerator Fade(float target, float seconds)
         {
+            int id = ++fadeId;
             if (seconds <= 0f)
             {
-                alpha = target;
+                Apply(target);
                 yield break;
             }
 
@@ -36,10 +58,11 @@ namespace Hollowknight.Silksong
             while (t < seconds)
             {
                 t += Time.unscaledDeltaTime;
-                alpha = Mathf.Lerp(start, target, Mathf.Clamp01(t / seconds));
+                Apply(Mathf.Lerp(start, target, Mathf.Clamp01(t / seconds)));
                 yield return null;
+                if (id != fadeId) yield break;   // a newer fade took over
             }
-            alpha = target;
+            if (id == fadeId) Apply(target);
         }
 
         void Awake()
@@ -47,6 +70,7 @@ namespace Hollowknight.Silksong
             pixel = new Texture2D(1, 1, TextureFormat.RGBA32, false) { hideFlags = HideFlags.HideAndDontSave };
             pixel.SetPixel(0, 0, Color.white);
             pixel.Apply();
+            enabled = alpha > 0f;
         }
 
         void OnDestroy()
