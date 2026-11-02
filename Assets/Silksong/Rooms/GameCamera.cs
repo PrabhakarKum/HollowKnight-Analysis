@@ -64,7 +64,6 @@ namespace Hollowknight.Silksong
 
         [Header("Entering a room (CameraController.PositionToHero)")]
         public float EntryHoldSeconds = 0.1f;      // literal WaitForSeconds(0.1) after the snap
-        public float EntryNudgeUnits = 1f;         // literal 1: hero x +-1 when at a side edge facing inward
     }
 
     // The follow camera. Two stages like the original: a follow target that leads the hero (look-ahead, dash lead,
@@ -101,7 +100,6 @@ namespace Hollowknight.Silksong
 
         // True from SnapTo until the hold has run out (the original's IsPositioningCamera).
         public bool IsHolding => holdRemaining > 0f;
-        public bool IsPositioning => IsHolding;
         public bool IsFrozen => frozen;
         public event Action PositionedAtHero;
 
@@ -152,7 +150,7 @@ namespace Hollowknight.Silksong
             Stubs.NotImplemented("GameCamera: umbrella-float look-down");
             Stubs.NotImplemented("GameCamera: lock areas (CameraLockArea) and camera offset areas");
             Stubs.NotImplemented("GameCamera: detach / short-damp after hits and respawns");
-            Stubs.NotImplemented("GameCamera: entry snap ignores lock areas (no CameraLockArea clamp) and does not wait one physics step");
+            Stubs.NotImplemented("GameCamera: entry snap ignores lock areas (no CameraLockArea clamp or lock-area entry offset, the only case where the original's inward edge nudge can run) and does not wait one physics step");
             Stubs.NotImplemented("GameCamera: screen shake and post effects (bloom, colour correction, noise) as URP volume");
         }
 
@@ -164,10 +162,12 @@ namespace Hollowknight.Silksong
 
         // Puts the camera on the target at once, with the look-ahead already facing the way the hero faces
         // (CameraTarget.PositionToStart). Also what the first step does.
+        // Does not touch a running entry hold: the hold ends on its own and then raises PositionedAtHero, which
+        // listeners wait for. (Step only calls this when no hold is running.)
         public void SnapToTarget()
         {
             if (target == null) return;
-            PlaceAtHero(target.position, FacingRight, false);
+            PlaceAtHero(target.position, FacingRight);
         }
 
         // Entering a room: jump to the hero at `heroPosition` inside the CURRENT bounds (set them first with
@@ -176,12 +176,13 @@ namespace Hollowknight.Silksong
         // calls this. Facing comes from the subject.
         public void SnapTo(Vector2 heroPosition) => SnapTo(heroPosition, FacingRight);
 
+        // Calling it again during a hold restarts the hold; calling it while frozen unfreezes.
         public void SnapTo(Vector2 heroPosition, bool facingRight)
         {
-            PlaceAtHero(heroPosition, facingRight, true);
+            PlaceAtHero(heroPosition, facingRight);
             holdRemaining = Settings.EntryHoldSeconds;
             frozen = false;
-            // A zero hold means no hold: finish at once so IsPositioning never stays true.
+            // A zero hold means no hold: finish at once so IsHolding never stays true.
             if (holdRemaining <= 0f) FinishHold();
         }
 
@@ -195,10 +196,10 @@ namespace Hollowknight.Silksong
             PositionedAtHero?.Invoke();
         }
 
-        // The original's PositionToHero: if the clamped position sits on a side edge of the room and the hero
-        // faces inward, the camera goes to hero x +-1 instead (not clamped, as in the original) so the hero is
-        // not drawn jammed against the wall. The ordinary clamp in Step pulls it back inside once following resumes.
-        void PlaceAtHero(Vector2 hero, bool facingRight, bool nudgeAtEdge)
+        // Puts the camera and follow target on `hero` with the look-ahead facing the given way. The original also has
+        // a branch that moves the camera to hero x +-1 at a side edge when the hero faces inward, but it tests the
+        // same unclamped x the clamp used, so it can never run without a lock area; it is not built (see the stub).
+        void PlaceAtHero(Vector2 hero, bool facingRight)
         {
             if (cam == null) cam = GetComponent<Camera>();
             var s = Settings;
@@ -210,22 +211,7 @@ namespace Hollowknight.Silksong
             followVel = camVel = Vector2.zero;
             followPos = KeepInside(new Vector2(hero.x + xOffset, hero.y));
             heroPrev = hero;
-            Vector2 camPos = followPos;
-            if (nudgeAtEdge && bounds != null)
-            {
-                Vector2 inset = Inset();
-                Rect area = bounds.Area;
-                // A room narrower than the view has no side edges to be jammed against (the camera is centred).
-                if (area.width > 2f * inset.x)
-                {
-                    const float eps = 0.0001f;
-                    bool leftEdge = camPos.x <= area.xMin + inset.x + eps;
-                    bool rightEdge = camPos.x >= area.xMax - inset.x - eps;
-                    if ((leftEdge && facingRight) || (rightEdge && !facingRight))
-                        camPos.x = hero.x + (facingRight ? s.EntryNudgeUnits : -s.EntryNudgeUnits);
-                }
-            }
-            Place(camPos);
+            Place(followPos);
             initialised = true;
         }
 

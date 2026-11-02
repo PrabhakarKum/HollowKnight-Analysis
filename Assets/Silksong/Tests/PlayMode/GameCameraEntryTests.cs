@@ -139,55 +139,77 @@ namespace Hollowknight.Silksong.Tests
             gameCam.PositionedAtHero += () => fired++;
             gameCam.Bounds = roomB;
             gameCam.SnapTo(new Vector2(550f, 30f));
-            Assert.IsTrue(gameCam.IsPositioning);
+            Assert.IsTrue(gameCam.IsHolding);
             Run(0.06f, 0.02f);
             Assert.AreEqual(0, fired);
             Run(0.06f, 0.02f);
             Assert.AreEqual(1, fired);
-            Assert.IsFalse(gameCam.IsPositioning);
+            Assert.IsFalse(gameCam.IsHolding);
         }
 
-        // ---------- edge nudge ----------
+        // ---------- hero at a side edge ----------
+        // The original has an inward-facing nudge branch, but it cannot run without a lock area (docs/study/08-camera.md),
+        // so at an edge the camera lands on the clamped position whichever way the hero faces.
 
         [Test]
-        public void LeftEdge_FacingInward_ShiftsTheCameraToHeroPlusOne()
+        public void LeftEdge_LandsOnTheClamp_FacingInwardOrAtTheWall([Values(true, false)] bool facingRight)
         {
             gameCam.Bounds = roomB;
-            gameCam.SnapTo(new Vector2(510f, 30f), true);
-            Assert.AreEqual(511f, CamX, 1e-4f, "hero x + 1 toward the room, not pinned at the 514.6 limit");
+            gameCam.SnapTo(new Vector2(510f, 30f), facingRight);
+            Assert.AreEqual(514.6f, CamX, 1e-4f, "clamped to the left limit, no nudge");
         }
 
         [Test]
-        public void LeftEdge_FacingTheWall_StaysAtTheLimit()
+        public void RightEdge_LandsOnTheClamp_FacingInwardOrAtTheWall([Values(true, false)] bool facingRight)
         {
             gameCam.Bounds = roomB;
-            gameCam.SnapTo(new Vector2(510f, 30f), false);
-            Assert.AreEqual(514.6f, CamX, 1e-4f);
+            gameCam.SnapTo(new Vector2(590f, 30f), facingRight);
+            Assert.AreEqual(585.4f, CamX, 1e-4f, "clamped to the right limit, no nudge");
         }
 
         [Test]
-        public void RightEdge_FacingInward_ShiftsTheCameraToHeroMinusOne()
-        {
-            gameCam.Bounds = roomB;
-            gameCam.SnapTo(new Vector2(590f, 30f), false);
-            Assert.AreEqual(589f, CamX, 1e-4f);
-        }
-
-        [Test]
-        public void RightEdge_FacingTheWall_StaysAtTheLimit()
-        {
-            gameCam.Bounds = roomB;
-            gameCam.SnapTo(new Vector2(590f, 30f), true);
-            Assert.AreEqual(585.4f, CamX, 1e-4f);
-        }
-
-        [Test]
-        public void MiddleOfTheRoom_NoNudge()
+        public void MiddleOfTheRoom_IsHeroPlusLookAhead()
         {
             gameCam.Bounds = roomB;
             gameCam.SnapTo(new Vector2(550f, 30f), false);
-            Assert.AreEqual(549f, CamX, 1e-4f, "plain hero x - 1 look-ahead");
+            Assert.AreEqual(549f, CamX, 1e-4f, "hero x - 1 look-ahead");
         }
+
+        // ---------- snap while frozen or held ----------
+
+        [Test]
+        public void SnapTo_WhileFrozen_Unfreezes_AndStillHoldsThenFollows()
+        {
+            gameCam.Freeze();
+            gameCam.Bounds = roomB;
+            gameCam.SnapTo(new Vector2(550f, 30f));
+            Assert.IsFalse(gameCam.IsFrozen);
+            Assert.AreEqual(551f, CamX, 1e-4f);
+            Run(0.12f, 0.02f);
+            Assert.IsFalse(gameCam.IsHolding);
+            heroGo.transform.position = new Vector3(560f, 30f, 0f);
+            Run(1f, 0.02f);
+            Assert.Greater(CamX, 555f, "following after the hold");
+        }
+
+        [Test]
+        public void SnapTo_DuringARunningHold_RestartsTheHold_AndFiresOnce()
+        {
+            int fired = 0;
+            gameCam.PositionedAtHero += () => fired++;
+            gameCam.Bounds = roomB;
+            gameCam.SnapTo(new Vector2(550f, 30f));
+            Run(0.08f, 0.02f);
+            gameCam.SnapTo(new Vector2(560f, 30f));
+            Assert.AreEqual(561f, CamX, 1e-4f);
+            Run(0.08f, 0.02f);
+            Assert.IsTrue(gameCam.IsHolding, "0.16 s since the first snap but only 0.08 s since the second");
+            Assert.AreEqual(0, fired);
+            Run(0.04f, 0.02f);
+            Assert.IsFalse(gameCam.IsHolding);
+            Assert.AreEqual(1, fired);
+        }
+
 
         // ---------- freeze ----------
 
@@ -252,9 +274,12 @@ namespace Hollowknight.Silksong.Tests
         [Test]
         public void EntryValues_LiveOnGameCameraSettings_NotOnHeroConfig()
         {
-            Assert.IsNull(typeof(HeroConfig).GetField("EntryHoldSeconds"));
-            Assert.IsNull(typeof(HeroConfig).GetField("EntryNudgeUnits"));
-            Assert.AreEqual(1f, gameCam.Settings.EntryNudgeUnits, 1e-6f);
+            // Only guards by name: no HeroConfig field (public or not) may be called Entry* or *Nudge*. A copy under
+            // another name would not be caught.
+            var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic;
+            foreach (var fi in typeof(HeroConfig).GetFields(flags))
+                Assert.IsFalse(fi.Name.Contains("Entry") || fi.Name.Contains("Nudge"), fi.Name);
+            Assert.AreEqual(0.1f, gameCam.Settings.EntryHoldSeconds, 1e-6f);
         }
     }
 
