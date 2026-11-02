@@ -103,6 +103,23 @@ namespace Hollowknight.Silksong.Tests
             if (world != null) UnityEngine.Object.Destroy(world.gameObject);
             world = null;
             yield return null;
+            // Leave nothing behind: an empty active scene, every room and the host scene unloaded, no stray world objects.
+            var empty = SceneManager.CreateScene("M2AcceptanceEmpty");
+            SceneManager.SetActiveScene(empty);
+            for (int i = SceneManager.sceneCount - 1; i >= 0; i--)
+            {
+                var s = SceneManager.GetSceneAt(i);
+                if (s == empty || !s.isLoaded) continue;
+                yield return SceneManager.UnloadSceneAsync(s);
+            }
+            foreach (var b in UnityEngine.Object.FindObjectsByType<RoomWorldBootstrap>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+                if (b != null) UnityEngine.Object.Destroy(b.gameObject);
+            foreach (var h in UnityEngine.Object.FindObjectsByType<HeroController>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+                if (h != null) UnityEngine.Object.Destroy(h.gameObject);
+            foreach (var c in UnityEngine.Object.FindObjectsByType<GameCamera>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+                if (c != null) UnityEngine.Object.Destroy(c.gameObject);
+            yield return null;
+            yield return null;
             TransitionPoint.ResetHandlerForTests();
             GateRegistry.ClearForTests();
             if (!string.IsNullOrEmpty(Stubs.StubsDocPath) && File.Exists(Stubs.StubsDocPath)) File.Delete(Stubs.StubsDocPath);
