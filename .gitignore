@@ -136,3 +136,7 @@ InitTestScene*.unity*
 # with Silksong > Build Hero Scene (see docs/study/09-hero-scene.md). The committed placeholder scene SilksongHero.unity is separate.
 /Assets/Scenes/SilksongHeroRoom.unity
 /Assets/Scenes/SilksongHeroRoom.unity.meta
+
+# Milestone 2 task 7: generated grey-box transition rooms (Tut_01, Tut_01b, Tut_02), built locally with Silksong > Build Transition Rooms
+/Assets/Scenes/Rooms/
+/Assets/Scenes/Rooms.meta
