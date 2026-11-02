@@ -109,6 +109,16 @@ namespace Hollowknight.Silksong.Tests
 
         int Count(string ev) => log.Events.FindAll(e => e == ev).Count;
 
+        // Declares expected log messages in the order the manager emits them (Unity needs every error and
+        // exception to be expected).
+        static void ExpectLogs(params (LogType type, string regex)[] logs)
+        {
+            foreach (var l in logs) LogAssert.Expect(l.type, new System.Text.RegularExpressions.Regex(l.regex));
+        }
+
+        const string FailedOld = @"\[Transition\] Failed: .*Returning to the old room";
+        const string FailedGone = @"\[Transition\] Failed: .*old room is already gone";
+
         static string NewSceneName() => "RtmRoom_" + Guid.NewGuid().ToString("N");
 
         [SetUp]
@@ -120,7 +130,7 @@ namespace Hollowknight.Silksong.Tests
             Stubs.ResetForTests();
             captured.Clear();
             Application.logMessageReceived += OnLog;
-            LogAssert.ignoreFailingMessages = true;
+            // Failure tests declare their expected messages with ExpectLogs.
 
             log = new Log();
             fader = new FakeFader(log);
@@ -143,7 +153,7 @@ namespace Hollowknight.Silksong.Tests
         public IEnumerator TearDown()
         {
             Application.logMessageReceived -= OnLog;
-            LogAssert.ignoreFailingMessages = false;
+            // (captured log list is cleared in SetUp)
             foreach (var go in spawned) if (go != null) UnityEngine.Object.Destroy(go);
             foreach (var scene in loader.Created)
                 if (scene.IsValid() && scene.isLoaded)
@@ -291,6 +301,7 @@ namespace Hollowknight.Silksong.Tests
         [UnityTest]
         public IEnumerator LoaderThrowsInLoad_RecoversIntoOldRoom()
         {
+            ExpectLogs((LogType.Exception, "load-boom"), (LogType.Error, FailedOld));
             loader.ThrowOnLoad = true;
             manager.RequestTransition(Request());
             yield return UntilIdle();
@@ -304,6 +315,7 @@ namespace Hollowknight.Silksong.Tests
         [UnityTest]
         public IEnumerator LoaderThrowsInActivate_RecoversIntoOldRoom()
         {
+            ExpectLogs((LogType.Exception, "activate-boom"), (LogType.Error, FailedOld));
             loader.ThrowOnActivate = true;
             manager.RequestTransition(Request());
             yield return UntilIdle();
@@ -315,6 +327,7 @@ namespace Hollowknight.Silksong.Tests
         [UnityTest]
         public IEnumerator EnterRoomThrows_EndsPlayingAndUnlocked()
         {
+            ExpectLogs((LogType.Exception, "enter-boom"), (LogType.Error, FailedGone));
             ((FakePlainHero)hero).ThrowOnEnter = true;
             manager.RequestTransition(Request());
             yield return UntilIdle();
@@ -325,6 +338,7 @@ namespace Hollowknight.Silksong.Tests
         [UnityTest]
         public IEnumerator LeaveRoomThrows_EndsPlayingAndUnlocked()
         {
+            ExpectLogs((LogType.Exception, "leave-boom"), (LogType.Error, FailedOld));
             ((FakePlainHero)hero).ThrowOnLeave = true;
             manager.RequestTransition(Request());
             yield return UntilIdle();
@@ -336,6 +350,7 @@ namespace Hollowknight.Silksong.Tests
         [UnityTest]
         public IEnumerator AfterSwap_SceneWithoutGates_IsFatalButSafe()
         {
+            ExpectLogs((LogType.Error, "no gates in the searched room"), (LogType.Error, FailedGone));
             loader.Gates = new string[0];
             manager.RequestTransition(Request());
             yield return UntilIdle();
@@ -347,6 +362,7 @@ namespace Hollowknight.Silksong.Tests
         [UnityTest]
         public IEnumerator AfterSwap_SceneNotLoaded_IsFatalButSafe()
         {
+            ExpectLogs((LogType.Error, FailedGone));
             loader.CreateScene = false;
             manager.RequestTransition(Request());
             yield return UntilIdle();
@@ -360,6 +376,7 @@ namespace Hollowknight.Silksong.Tests
         {
             var plain = new FakePlainHero(log);
             MakeManager(plain);
+            ExpectLogs((LogType.Exception, "load-boom"), (LogType.Error, FailedOld), (LogType.Error, "no recovery hook"));
             loader.ThrowOnLoad = true;
             manager.RequestTransition(Request());
             yield return UntilIdle();
@@ -378,6 +395,7 @@ namespace Hollowknight.Silksong.Tests
             go.AddComponent<BoxCollider2D>();
             var gate = go.AddComponent<TransitionPoint>();
             gate.Configure(sceneName, "left1", Vector2.zero);
+            ExpectLogs((LogType.Exception, "load-boom"), (LogType.Error, FailedOld));
             loader.ThrowOnLoad = true;
 
             manager.RequestTransition(Request());
