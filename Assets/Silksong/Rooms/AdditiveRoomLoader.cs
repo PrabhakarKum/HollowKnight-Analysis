@@ -19,13 +19,21 @@ namespace Hollowknight.Silksong
     // Either way a room's gates register in OnEnable at the moment the room goes live, and ActivateAndUnloadPrevious
     // only finishes after that, so GateRegistry.Find(name, newScene) works as soon as the manager resumes.
     //
+    // TESTING: the unit tests only exercise the "already live" path (code-built scenes). The engine-deferred path
+    // (allowSceneActivation) is exercised by the grey-box rooms of Task 7 through EditorPathSceneSource.
+    //
+    // Abandoning a deferred room: Unity cannot cancel a load held at 90%, and a held load blocks every later scene
+    // load. So an abandoned deferred room is allowed to finish and is then hidden and unloaded (FinishAbandon). Its
+    // Awake / OnEnable run once in that moment; its gates are registered briefly and removed again when it unloads.
+    //
     // Only the room this loader activated last (CurrentRoom) is ever unloaded, and never a protected scene (the
     // bootstrap's own scene).
-    public class AdditiveRoomLoader : IRoomLoader
+    public class AdditiveRoomLoader : IRoomLoader, IRoomLoaderCleanup
     {
         const float ReadyProgress = 0.9f;   // engine progress value at which an op with allowSceneActivation=false stalls
 
         readonly IRoomSceneSource source;
+        readonly RoomTransitionSettings settings;
         readonly HashSet<int> protectedHandles = new HashSet<int>();
 
         // Pending (hidden) room.
@@ -35,14 +43,23 @@ namespace Hollowknight.Silksong
         List<GameObject> hiddenRoots;               // live scenes only
         Scene pendingScene;                         // live scenes only
 
-        public AdditiveRoomLoader(IRoomSceneSource sceneSource = null)
+        // Loads that were released but are still integrating, to be hidden and unloaded.
+        readonly List<KeyValuePair<AsyncOperation, string>> orphans = new List<KeyValuePair<AsyncOperation, string>>();
+        // The previous room, between "new room is current" and "old room is unloaded". Kept so a coroutine that is
+        // stopped in between does not leak the old scene: the next clean-up unloads it.
+        Scene retiring;
+
+        public AdditiveRoomLoader(IRoomSceneSource sceneSource = null, RoomTransitionSettings sharedSettings = null)
         {
             source = sceneSource ?? new BuildSettingsSceneSource();
+            settings = sharedSettings ?? new RoomTransitionSettings();
         }
 
         // The room that was made live last; the next activation unloads it. Set it for a room that was already
         // loaded before the loader started (a scene opened in the editor).
         public Scene CurrentRoom { get; set; }
+
+        public string CurrentRoomName => CurrentRoom.IsValid() && CurrentRoom.isLoaded ? CurrentRoom.name : null;
 
         public bool HasPending => pendingName != null;
 
@@ -52,13 +69,17 @@ namespace Hollowknight.Silksong
             if (scene.IsValid()) protectedHandles.Add(scene.handle);
         }
 
+        bool TimedOut(float start) => Time.unscaledTime - start >= settings.loadTimeoutSeconds;
+
         public IEnumerator LoadHidden(string sceneName)
         {
             if (string.IsNullOrEmpty(sceneName)) throw new ArgumentException("room scene name is empty");
+            if (sceneName == CurrentRoomName)
+                throw new InvalidOperationException("room scene '" + sceneName + "' is the room that is already live");
 
-            // A hidden room that was never activated (a transition that failed in between) has to go first: a
-            // deferred load blocks every later scene load, and a hidden live scene would leak.
-            if (HasPending) yield return Abandon();
+            // Leftovers of an earlier change go first: a hidden room that was never activated, loads still
+            // integrating, the old room of an interrupted swap. A deferred load would block every later load.
+            yield return FinishAbandon();
 
             if (!source.Exists(sceneName))
                 throw new InvalidOperationException("room scene '" + sceneName + "' cannot be loaded (not in Build Settings / not found)");
@@ -72,8 +93,17 @@ namespace Hollowknight.Silksong
             if (op != null)
             {
                 op.allowSceneActivation = false;
+                float start = Time.unscaledTime;
                 // Done already means the engine ignored the hold: treat it as live and hide it by hand below.
-                while (!op.isDone && op.progress < ReadyProgress) yield return null;
+                while (!op.isDone && op.progress < ReadyProgress)
+                {
+                    if (TimedOut(start))
+                    {
+                        AbandonPending();
+                        throw new TimeoutException("room scene '" + sceneName + "' did not finish loading in " + settings.loadTimeoutSeconds + " s");
+                    }
+                    yield return null;
+                }
                 pendingDeferred = !op.isDone;
                 if (pendingDeferred) yield break;
                 yield return null;   // let the engine finish integrating the scene before it is looked up
@@ -82,9 +112,8 @@ namespace Hollowknight.Silksong
             pendingScene = SceneManager.GetSceneByName(sceneName);
             if (!pendingScene.IsValid() || !pendingScene.isLoaded)
             {
-                string failed = pendingName;
                 ClearPending();
-                throw new InvalidOperationException("room scene '" + failed + "' did not load");
+                throw new InvalidOperationException("room scene '" + sceneName + "' did not load");
             }
             HideRoots(pendingScene);
         }
@@ -98,7 +127,19 @@ namespace Hollowknight.Silksong
             {
                 var op = pendingOp;
                 op.allowSceneActivation = true;
-                while (!op.isDone) yield return null;   // Awake / OnEnable of the room (gate registration) run here
+                float start = Time.unscaledTime;
+                while (!op.isDone)   // Awake / OnEnable of the room (gate registration) run here
+                {
+                    if (TimedOut(start))
+                    {
+                        // Already released, so it finishes by itself; FinishAbandon removes it.
+                        orphans.Add(new KeyValuePair<AsyncOperation, string>(op, pendingName));
+                        string slow = pendingName;
+                        ClearPending();
+                        throw new TimeoutException("room scene '" + slow + "' did not activate in " + settings.loadTimeoutSeconds + " s");
+                    }
+                    yield return null;
+                }
                 scene = SceneManager.GetSceneByName(pendingName);
             }
             else
@@ -121,28 +162,67 @@ namespace Hollowknight.Silksong
                 // Switched off first: for the frames the unload takes, the old room's colliders and gates must not
                 // overlap the new room's (rooms share world coordinates).
                 foreach (var root in previous.GetRootGameObjects()) root.SetActive(false);
-                var unload = SceneManager.UnloadSceneAsync(previous);
-                if (unload != null) yield return unload;
+                retiring = previous;
+                yield return UnloadRetiring();
             }
         }
 
-        // Drops a room that was loaded hidden but will not be used.
-        IEnumerator Abandon()
+        IEnumerator UnloadRetiring()
         {
-            var scene = pendingDeferred ? default(Scene) : pendingScene;
-            if (pendingDeferred && pendingOp != null)
+            var old = retiring;
+            if (old.IsValid() && old.isLoaded && old != CurrentRoom)
             {
-                // Must be allowed to finish, or later loads queue behind it forever.
-                pendingOp.allowSceneActivation = true;
-                while (!pendingOp.isDone) yield return null;
-                scene = SceneManager.GetSceneByName(pendingName);
+                var unload = SceneManager.UnloadSceneAsync(old);
+                if (unload != null) yield return unload;
+            }
+            retiring = default;
+        }
+
+        public void AbandonPending()
+        {
+            if (!HasPending) return;
+            try
+            {
+                if (pendingDeferred && pendingOp != null)
+                {
+                    // Cannot be cancelled; must be released or later loads queue behind it.
+                    pendingOp.allowSceneActivation = true;
+                    orphans.Add(new KeyValuePair<AsyncOperation, string>(pendingOp, pendingName));
+                }
+                else if (pendingScene.IsValid() && pendingScene.isLoaded && pendingScene != CurrentRoom)
+                {
+                    SceneManager.UnloadSceneAsync(pendingScene);
+                }
+                else if (pendingOp != null && !pendingOp.isDone)
+                {
+                    pendingOp.allowSceneActivation = true;
+                    orphans.Add(new KeyValuePair<AsyncOperation, string>(pendingOp, pendingName));
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogException(ex);
             }
             ClearPending();
-            if (scene.IsValid() && scene.isLoaded && scene != CurrentRoom)
+        }
+
+        public IEnumerator FinishAbandon()
+        {
+            AbandonPending();
+
+            foreach (var orphan in orphans.ToArray())
             {
+                float start = Time.unscaledTime;
+                while (!orphan.Key.isDone && !TimedOut(start)) yield return null;
+                orphans.Remove(orphan);
+                var scene = SceneManager.GetSceneByName(orphan.Value);
+                if (!orphan.Key.isDone || !scene.IsValid() || !scene.isLoaded || scene == CurrentRoom) continue;
+                foreach (var root in scene.GetRootGameObjects()) root.SetActive(false);
                 var unload = SceneManager.UnloadSceneAsync(scene);
                 if (unload != null) yield return unload;
             }
+
+            if (retiring.IsValid()) yield return UnloadRetiring();
         }
 
         void ClearPending()

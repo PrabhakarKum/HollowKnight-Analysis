@@ -92,7 +92,7 @@ namespace Hollowknight.Silksong
             Manager = GetComponent<RoomTransitionManager>();
             if (Manager == null) Manager = gameObject.AddComponent<RoomTransitionManager>();
 
-            Loader = new AdditiveRoomLoader(sceneSource);
+            Loader = new AdditiveRoomLoader(sceneSource, settings);
             if (homeSceneIsRoom) Loader.CurrentRoom = home;
             else Loader.Protect(home);   // never unload the scene that carries the bootstrap
 
@@ -260,12 +260,27 @@ namespace Hollowknight.Silksong
         {
             // A failed change must not leave the camera frozen.
             if (gameCamera != null) gameCamera.Unfreeze();
-            if (success && Loader != null && Loader.CurrentRoom.IsValid()) RecordRoom(Loader.CurrentRoom);
+            if (Loader == null || !Loader.CurrentRoom.IsValid()) return;
+
+            var live = Loader.CurrentRoom;
+            if (success)
+            {
+                RecordRoom(live);
+                return;
+            }
+            // Failed after the swap (new room without gates): the old room is gone, so the camera must follow the room
+            // that is actually live. Before the swap the live room is still the old one and its bounds already apply.
+            var info = FindRoomInfo(live);
+            if (gameCamera != null && info != null && info.Bounds != gameCamera.Bounds)
+            {
+                EnterRoomView(live);
+                RecordRoom(live);
+            }
         }
 
         // Remembers which room the player is in. In memory only.
-        // ASSUMPTION: respawnScene follows every completed room change, as the plan asked; the original only changes it
-        // at benches, so the death-respawn task (8) must decide whether a separate "last bench" field is needed.
+        // respawnScene is NOT touched: as in the original it only changes at benches / respawn markers (Task 8).
+        // currentScene is the plain "where am I" record; mapZone gets the stable key, never the display name.
         void RecordRoom(Scene scene)
         {
             var info = FindRoomInfo(scene);
@@ -274,8 +289,8 @@ namespace Hollowknight.Silksong
                 Debug.LogWarning("[World] Room '" + scene.name + "' has no RoomInfo; player data keeps its old room.");
                 return;
             }
-            PlayerData.respawnScene = info.SceneName;
-            PlayerData.mapZone = info.MapZoneName;
+            PlayerData.currentScene = info.SceneName;
+            if (!string.IsNullOrEmpty(info.MapZoneKey)) PlayerData.mapZone = info.MapZoneKey;
         }
 
         public static RoomInfo FindRoomInfo(Scene scene)

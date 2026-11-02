@@ -122,6 +122,8 @@ namespace Hollowknight.Silksong
             {
                 if (fader is ScreenFader sf && sf != null) sf.SetAlpha(0f);
                 if (hero is ITransitionHeroRecovery recovery) recovery.RestoreControl();
+                // A room loaded hidden but never activated must not stay behind.
+                if (loader is IRoomLoaderCleanup cleanup) cleanup.AbandonPending();
             }
             catch (Exception ex)
             {
@@ -147,16 +149,23 @@ namespace Hollowknight.Silksong
             // EnteringLevel is accepted: a bottom gate may be left straight after arriving (TransitionRules).
             bool stateOk = State == GameState.Playing || State == GameState.EnteringLevel;
             bool valid = !string.IsNullOrEmpty(request.TargetScene) && !string.IsNullOrEmpty(request.EntryGate);
-            if (running || !stateOk || !valid)
+            // Two scenes of one name cannot be told apart (scene lookup is by name), so a room cannot lead to itself.
+            bool sameRoom = valid && loader is IRoomLoaderCleanup info && info.CurrentRoomName == request.TargetScene;
+            if (running || !stateOk || !valid || sameRoom)
             {
-                Debug.LogWarning($"[Transition] Request to '{request.TargetScene}' rejected (running={running}, state={State}, valid={valid}).");
+                Debug.LogWarning($"[Transition] Request to '{request.TargetScene}' rejected (running={running}, state={State}, valid={valid}, targetIsCurrentRoom={sameRoom}).");
                 ReleaseGates(request);
                 return;
             }
 
             // A walk-in still in progress is abandoned: the new request takes over the hero. Its fade-in must
-            // stop too, or it would fight the next fade-out.
-            if (routine != null) StopCoroutine(routine);
+            // stop too, or it would fight the next fade-out. The abandoned run is reported as finished (false) so
+            // TransitionStarted / TransitionFinished stay paired.
+            if (routine != null)
+            {
+                StopCoroutine(routine);
+                Notify(TransitionFinished, false);
+            }
             if (activeFade != null) StopCoroutine(activeFade);
             activeFade = null;
             routine = StartCoroutine(Guard(Run(request)));
@@ -246,7 +255,10 @@ namespace Hollowknight.Silksong
         IEnumerator PlaceNotice(IEnumerator inner, Scene scene, TransitionPoint arrival)
         {
             bool more = inner.MoveNext();
-            Notify(HeroPlaced, scene, arrival);
+            // A hero that refused (no input / config) never moved; announcing a placement would snap the camera to
+            // the wrong spot. A placed hero is always locked at this point.
+            if (hero.ControlLocked) Notify(HeroPlaced, scene, arrival);
+            else Debug.LogError("[Transition] The hero was not placed at the arrival gate (EnterRoom refused); HeroPlaced is skipped.");
             while (more)
             {
                 yield return inner.Current;
@@ -260,6 +272,13 @@ namespace Hollowknight.Silksong
             Debug.LogError(oldRoomGone
                 ? $"[Transition] Failed: {message}. The old room is already gone; unlocking the hero in the current room."
                 : $"[Transition] Failed: {message}. Returning to the old room.");
+
+            // Drop a room that was loaded hidden but never made live (and finish any interrupted swap).
+            if (loader is IRoomLoaderCleanup cleanup)
+            {
+                cleanup.AbandonPending();
+                yield return Stage(cleanup.FinishAbandon(), Debug.LogException);
+            }
 
             Exception fadeError = null;
             yield return StartFade(fader.FadeIn(), ex => fadeError = ex);
