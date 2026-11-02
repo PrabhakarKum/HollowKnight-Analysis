@@ -44,3 +44,11 @@ MonoBehaviour:
   HurtKnockbackX: 15
   HurtKnockbackY: 0
   HurtStunSeconds: 0.2
+  TransitionWalkInSeconds: 0.33
+  TransitionDropSpeed: -12
+  TransitionDropSeconds: 0.33
+  TransitionBottomLift: 3
+  TransitionBottomSeconds: 0.1
+  TransitionBottomSpeedX: 8
+  TransitionBottomSpeedY: 9.4
+  TransitionLeaveUpSpeed: 3

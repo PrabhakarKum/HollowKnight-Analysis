@@ -22,7 +22,19 @@ namespace Hollowknight.Silksong
     [RequireComponent(typeof(Collider2D))]
     public class HeroController : MonoBehaviour
     {
-        public IHeroInput Input { get; set; }
+        // The injected input. While the control is locked (room transitions) every hero system sees the driver's
+        // scripted input instead, so none of them needs its own lock check and the dash/wall/attack/health order is
+        // untouched; unlocking simply hands the real input back.
+        IHeroInput rawInput;
+        public IHeroInput Input
+        {
+            get => ControlLocked && transition != null ? transition.ScriptedInput : rawInput;
+            set => rawInput = value;
+        }
+
+        // True while the hero ignores the player (set by HeroTransitionDriver).
+        public bool ControlLocked { get; internal set; }
+        public HeroTransitionDriver Transition => transition;
         public HeroConfig Config { get; set; }
         // Optional: the hero plays nothing when no animator is assigned.
         public ISpriteAnimator Animator { get; set; }
@@ -59,6 +71,7 @@ namespace Hollowknight.Silksong
         HeroWall wall;
         HeroAttack attack;
         HeroHealth health;
+        HeroTransitionDriver transition;
         PhysicsMaterial2D runtimeMaterial;
 
         internal Rigidbody2D Body => body;
@@ -101,6 +114,9 @@ namespace Hollowknight.Silksong
             health = GetComponent<HeroHealth>();
             if (health == null) health = gameObject.AddComponent<HeroHealth>();
             health.Bind(this);
+            transition = GetComponent<HeroTransitionDriver>();
+            if (transition == null) transition = gameObject.AddComponent<HeroTransitionDriver>();
+            transition.Bind(this);
         }
 
         // Hurt and death cancel a jump in progress and its buffers (the original resets all motion).
@@ -114,7 +130,11 @@ namespace Hollowknight.Silksong
         // Exactly what one FixedUpdate does. Public so tests can run a known number of steps.
         public void StepFixed(float dt)
         {
-            if (Input == null || Config == null) return;
+            if (rawInput == null || Config == null) return;
+            // The transition driver ticks first: it times the walk-in and unlocks the controls in the step the walk
+            // ends. When it owns the velocity outright (leaving upward, waiting to drop in, the bottom-gate throw)
+            // movement and the wall must not run, like the dash; dash and attack see neutral input meanwhile.
+            bool scripted = transition.FixedStep(dt);
             // Health first: it ticks invulnerability, and while the hero is stunned by a hit (or dead) it owns the
             // velocity outright, like the dash does, so movement and the wall must not run (see HeroHealth).
             bool owned = health.FixedStep(dt);
@@ -123,7 +143,8 @@ namespace Hollowknight.Silksong
             // The swing starts before movement and wall so a swing on a wall changes the cling in this same
             // step; its pogo is applied after them because movement rewrites vertical velocity (see HeroAttack).
             attack.BeginStep(dt, dashed);
-            if (owned) wall.BeginStep(dt);   // sees Hurt/Dead and lets go of everything; never starts a wall jump
+            if (scripted && !owned) { /* the driver set the velocity; nothing else may overwrite it */ }
+            else if (owned) wall.BeginStep(dt);   // sees Hurt/Dead and lets go of everything; never starts a wall jump
             else if (dashed) wall.OnDashStep();
             else if (!wall.BeginStep(dt))
             {

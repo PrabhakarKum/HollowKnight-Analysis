@@ -72,5 +72,20 @@ namespace Hollowknight.Silksong
         // PROVISIONAL: no vertical knockback value was found.
         public float HurtKnockbackY = 0f;
         public float HurtStunSeconds = 0.2f;
+
+        [Header("Room transitions (docs/study/10-room-transitions.md section 3; read from the original and its hero prefab)")]
+        // How long the hero walks inward after arriving through a left or right gate before control returns.
+        public float TransitionWalkInSeconds = 0.33f;
+        // Arriving through a top gate: the downward speed the hero is dropped with, and how long until control returns.
+        public float TransitionDropSpeed = -12f;
+        public float TransitionDropSeconds = 0.33f;
+        // Arriving through a bottom gate: the hero starts this far above the gate and is thrown sideways (the way it
+        // faces) and up for TransitionBottomSeconds, then falls.
+        public float TransitionBottomLift = 3f;
+        public float TransitionBottomSeconds = 0.1f;
+        public float TransitionBottomSpeedX = 8f;
+        public float TransitionBottomSpeedY = 9.4f;
+        // Leaving through a top gate: the hero is pushed upward at this speed (the original's MIN_JUMP_SPEED).
+        public float TransitionLeaveUpSpeed = 3f;
     }
 }

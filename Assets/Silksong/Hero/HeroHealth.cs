@@ -64,7 +64,11 @@ namespace Hollowknight.Silksong
         // The last marker the hero respawned at; used by the automatic respawn after a death.
         public RespawnMarker CurrentMarker { get; private set; }
 
-        public bool CanTakeDamage => !dead && invulnerableRemaining <= 0f && !stunActive;
+        // Set by HeroTransitionDriver from the start of leaving a room until the hero has finished entering the next
+        // one (the original's NO_DAMAGE mode). Not a timer, so it is kept apart from the hurt invulnerability.
+        internal bool TransitionInvulnerable { get; set; }
+
+        public bool CanTakeDamage => !dead && invulnerableRemaining <= 0f && !stunActive && !TransitionInvulnerable;
 
         public event Action Damaged;
         public event Action Died;
