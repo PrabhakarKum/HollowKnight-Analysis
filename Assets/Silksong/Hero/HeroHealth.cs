@@ -64,7 +64,11 @@ namespace Hollowknight.Silksong
         // The last marker the hero respawned at; used by the automatic respawn after a death.
         public RespawnMarker CurrentMarker { get; private set; }
 
-        public bool CanTakeDamage => !dead && invulnerableRemaining <= 0f && !stunActive;
+        // Set by HeroTransitionDriver from the start of leaving a room until the hero has finished entering the next
+        // one (the original's NO_DAMAGE mode). Not a timer, so it is kept apart from the hurt invulnerability.
+        internal bool TransitionInvulnerable { get; set; }
+
+        public bool CanTakeDamage => !dead && invulnerableRemaining <= 0f && !stunActive && !TransitionInvulnerable;
 
         public event Action Damaged;
         public event Action Died;
@@ -144,6 +148,8 @@ namespace Hollowknight.Silksong
             CancelActions(true);
             owner.Dash.ResetForRespawn();
             owner.Attack.ResetForRespawn();
+            // A respawn mid-transition (hazard in the old room) ends the lock and the transition invulnerability.
+            owner.Transition?.RestoreControl();
 
             dead = false;
             invulnerableRemaining = 0f;
@@ -244,6 +250,7 @@ namespace Hollowknight.Silksong
             invulnerableRemaining = 0f;
             deathElapsed = 0f;
             owner.State = HeroState.Dead;
+            owner.Transition?.RestoreControl();
             owner.Body.linearVelocity = Vector2.zero;
             owner.Animator?.Play("Death");
             // Exist in the original and are not built.
@@ -261,6 +268,7 @@ namespace Hollowknight.Silksong
             stunRemaining = 0f;
             stunActive = false;
             deathElapsed = 0f;
+            if (owner != null && owner.Transition != null) owner.Transition.RestoreControl();
             if (owner != null && (owner.State == HeroState.Hurt || owner.State == HeroState.Dead))
                 owner.State = HeroState.Falling;
         }

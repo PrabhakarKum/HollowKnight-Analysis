@@ -53,6 +53,10 @@ namespace Hollowknight.Silksong.Tests
             { "AttackDamage", 1 },
             // hurt
             { "HurtInvulnerableSeconds", 1f }, { "HurtKnockbackX", 15f }, { "HurtKnockbackY", 0f }, { "HurtStunSeconds", 0.2f },
+            // room transitions (docs/study/10-room-transitions.md section 3; added with the hero transition driver)
+            { "TransitionWalkInSeconds", 0.33f }, { "TransitionDropSpeed", -12f }, { "TransitionDropSeconds", 0.33f },
+            { "TransitionBottomLift", 3f }, { "TransitionBottomSeconds", 0.1f }, { "TransitionBottomSpeedX", 8f },
+            { "TransitionBottomSpeedY", 9.4f }, { "TransitionLeaveUpSpeed", 3f },
         };
 
 #if UNITY_EDITOR
