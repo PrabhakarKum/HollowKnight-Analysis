@@ -17,7 +17,7 @@ namespace Hollowknight.Silksong
 
         [SerializeField] string targetScene;
         // The original names this field entryPoint. Renamed to entryGate because it is the name of a gate
-        // in the target room; FormerlySerializedAs would only matter for imported Silksong scenes.
+        // in the target room.
         [SerializeField] string entryGate;
         // Shift added to the arrival spot (Tut_01b right1 uses (-1, 0) to land inside the next room).
         [SerializeField] Vector2 entryOffset;

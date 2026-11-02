@@ -149,6 +149,24 @@ namespace Hollowknight.Silksong.Tests
             Assert.AreEqual(2, handler.Requests.Count);
         }
 
+        [Test]
+        public void Touch_DoorGate_LogsTheDoorStubAndIsIgnored()
+        {
+            Stubs.ResetForTests();
+            // Keep the test from appending to the real docs/study/STUBS.md.
+            Stubs.StubsDocPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "stubs-doortest.md");
+            try
+            {
+                UnityEngine.TestTools.LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex("TransitionPoint.Door"));
+                var gate = Make("door1");
+                gate.Configure("Tut_01b", "left1", Vector2.zero);
+                var handler = new FakeHandler { State = GameState.Playing };
+                Assert.AreEqual(TransitionDecision.Ignore, gate.Touch(handler, OutwardRightHero()));
+                Assert.AreEqual(0, handler.Requests.Count);
+            }
+            finally { Stubs.StubsDocPath = null; }
+        }
+
         class FakeHandler : ITransitionRequestHandler
         {
             public GameState State { get; set; }
