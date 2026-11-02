@@ -34,6 +34,40 @@ namespace Hollowknight.Silksong
         public GameState State { get; private set; } = GameState.Playing;
         public bool IsTransitionRunning => running;
 
+        // Observation points for the persistent bootstrap (camera freeze, bounds swap, snap, player data). They only
+        // report; they never change the sequence, and a throwing listener is logged and skipped.
+        // Order for a successful change: TransitionStarted, RoomActivated, HeroPlaced, TransitionFinished(true).
+        // A failure ends with TransitionFinished(false) instead.
+        // The request is accepted and the hero has been told to leave (State is ExitingLevel).
+        public event Action<TransitionRequest> TransitionStarted;
+        // The new room is live and its arrival gate was found; the hero has not been placed yet.
+        public event Action<Scene, TransitionPoint> RoomActivated;
+        // The hero was put at the arrival gate (its EnterRoom has run its first step); it may still walk in.
+        public event Action<Scene, TransitionPoint> HeroPlaced;
+        // The sequence is over and the hero has control again (true), or it failed / was aborted (false).
+        public event Action<bool> TransitionFinished;
+
+        // Every listener is called even if an earlier one throws.
+        static void Notify<T>(Action<T> e, T arg)
+        {
+            if (e == null) return;
+            foreach (Delegate d in e.GetInvocationList())
+            {
+                try { ((Action<T>)d)(arg); }
+                catch (Exception ex) { Debug.LogException(ex); }
+            }
+        }
+
+        static void Notify<T1, T2>(Action<T1, T2> e, T1 a, T2 b)
+        {
+            if (e == null) return;
+            foreach (Delegate d in e.GetInvocationList())
+            {
+                try { ((Action<T1, T2>)d)(a, b); }
+                catch (Exception ex) { Debug.LogException(ex); }
+            }
+        }
+
         // Wires the collaborators. Called by the bootstrap (Task 6) or a test. Passing settings makes the manager
         // and a ScreenFader share ONE settings object.
         public void Configure(IRoomLoader roomLoader, IScreenFader screenFader, ITransitionHero transitionHero,
@@ -93,6 +127,7 @@ namespace Hollowknight.Silksong
             {
                 Debug.LogException(ex);
             }
+            Notify(TransitionFinished, false);
         }
 
         public void RequestTransition(TransitionRequest request)
@@ -152,6 +187,7 @@ namespace Hollowknight.Silksong
             State = GameState.ExitingLevel;
             var senders = FindGates(request);   // looked up now: the old room is gone after the swap
             Exception err = null;
+            Notify(TransitionStarted, request);
 
             try { hero.LeaveRoom(request.LeaveDirection); }   // locks control from here on
             catch (Exception ex) { err = ex; }
@@ -188,17 +224,34 @@ namespace Hollowknight.Silksong
             // The original's SaveLevelState, map-zone events and GC pass would run here.
             Stubs.NotImplemented("RoomTransitionManager.LevelStateAndGc");
 
+            Notify(RoomActivated, scene, arrival);
+
             State = GameState.EnteringLevel;
             running = false;   // gates may fire again now (bottom-gate exception)
 
             yield return new WaitForSecondsRealtime(Settings.heroWaitSeconds);
             var fadeIn = StartFade(fader.FadeIn(), ex => err = ex);
-            yield return Stage(hero.EnterRoom(arrival, request.EntryDelay + arrival.EntryDelay), ex => err = ex);
+            yield return Stage(PlaceNotice(hero.EnterRoom(arrival, request.EntryDelay + arrival.EntryDelay), scene, arrival), ex => err = ex);
             yield return fadeIn;
             if (err != null) { yield return Fail(err, "entering the room failed", senders, true); yield break; }
 
             State = GameState.Playing;
             routine = null;
+            Notify(TransitionFinished, true);
+        }
+
+        // Passes the hero's EnterRoom through unchanged, but raises HeroPlaced after its first step: that is when the
+        // hero stands at the arrival gate (the real hero places itself before its first wait). Raised even when
+        // EnterRoom ends in that first step.
+        IEnumerator PlaceNotice(IEnumerator inner, Scene scene, TransitionPoint arrival)
+        {
+            bool more = inner.MoveNext();
+            Notify(HeroPlaced, scene, arrival);
+            while (more)
+            {
+                yield return inner.Current;
+                more = inner.MoveNext();
+            }
         }
 
         IEnumerator Fail(Exception error, string message, List<TransitionPoint> senders, bool oldRoomGone)
@@ -233,6 +286,7 @@ namespace Hollowknight.Silksong
             State = GameState.Playing;
             running = false;
             routine = null;
+            Notify(TransitionFinished, false);
         }
 
         // Starts a fade and remembers it, cancelling the previous one so a stale fade-in cannot undo a fade-out.

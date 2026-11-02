@@ -34,9 +34,7 @@ namespace Hollowknight.Silksong
                 Debug.LogError("HeroSceneBootstrap: hero, actions or config is not assigned; the hero will not move. Rebuild with Silksong > Build Hero Scene.", this);
                 return;
             }
-            hero.Config = config;
-            hero.Input = actions;
-            if (animator != null) hero.Animator = animator;
+            HeroWiring.Inject(hero, config, actions, animator);
         }
 
         void Start()
