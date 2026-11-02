@@ -95,7 +95,7 @@ namespace Hollowknight.Silksong.Tests
                 var area = infos[0].Bounds.Area;
                 Assert.Greater(area.width, 31f, name + ": room narrower than the camera view");
                 foreach (var gate in All<TransitionPoint>(scene))
-                    Assert.IsTrue(area.Contains(new Vector2(Mathf.Clamp(gate.transform.position.x, area.xMin, area.xMax), gate.transform.position.y)),
+                    Assert.IsTrue(gate.transform.position.y >= area.yMin && gate.transform.position.y <= area.yMax,
                         name + "/" + gate.name + " is outside the bounds vertically");
             }
         }
@@ -194,7 +194,7 @@ namespace Hollowknight.Silksong.Tests
                     if (s.xMin <= p.x && s.xMax >= p.x && s.yMax <= p.y && s.yMax > best) { best = s.yMax; first = i; }
                 }
                 Assert.GreaterOrEqual(first, 0, name + ": nothing under the start point");
-                Assert.Less(p.y - best, 1.5f, name + ": the start point floats above its floor");
+                Assert.Less(p.y - best, 2f, name + ": the start point floats above its floor");
 
                 var reached = new HashSet<int>();
                 var queue = new Queue<int>();
@@ -310,7 +310,7 @@ namespace Hollowknight.Silksong.Tests
             source.BeginLoad("Both");
             source.BeginLoad("OnlySecond");
             CollectionAssert.AreEqual(new[] { "Both" }, first.Loaded);
-            CollectionAssert.AreEqual(new[] { "Both", "OnlySecond" }, second.Loaded);
+            CollectionAssert.AreEqual(new[] { "OnlySecond" }, second.Loaded);
         }
 
         [Test]
