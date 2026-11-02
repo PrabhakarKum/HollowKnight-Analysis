@@ -418,5 +418,171 @@ namespace Hollowknight.Silksong.Tests
             Assert.IsFalse(e.MoveNext());
             Assert.IsFalse(hero.ControlLocked);
         }
+
+        // ------------------------------------------------------------------ review fixes
+
+        [Test]
+        public void HeroWithoutInput_RefusesToLock_SoNothingHangs()
+        {
+            BuildWorld();
+            Settle();
+            hero.Input = null;
+
+            UnityEngine.TestTools.LogAssert.Expect(LogType.Error, new System.Text.RegularExpressions.Regex("Cannot start a room transition"));
+            driver.LeaveRoom(GatePosition.Right);
+            Assert.IsFalse(hero.ControlLocked);
+            Assert.IsFalse(driver.IsInvulnerable);
+
+            var gate = MakeGate("left1", new Vector2(5f, 1f), Vector2.zero);
+            UnityEngine.TestTools.LogAssert.Expect(LogType.Error, new System.Text.RegularExpressions.Regex("Cannot start a room transition"));
+            var e = driver.EnterRoom(gate, 0f);
+            Assert.IsFalse(e.MoveNext(), "the coroutine ends at once instead of waiting forever");
+            Assert.IsFalse(hero.ControlLocked);
+            Assert.DoesNotThrow(() => hero.StepFixed(dt));
+        }
+
+        [Test]
+        public void RespawnAt_MidLeave_EndsTheLockAndInvulnerability()
+        {
+            BuildWorld();
+            Settle();
+            var markerGo = new GameObject("Marker");
+            spawned.Add(markerGo);
+            markerGo.transform.position = new Vector3(0f, 1f, 0f);
+            var marker = markerGo.AddComponent<RespawnMarker>();
+            marker.Configure("m", true);
+
+            driver.LeaveRoom(GatePosition.Right);
+            Step(5);
+            Assert.IsTrue(hero.ControlLocked, "test setup");
+
+            hero.Health.RespawnAt(marker);
+
+            Assert.IsFalse(hero.ControlLocked);
+            Assert.IsFalse(driver.IsInvulnerable);
+            Assert.IsTrue(hero.Health.CanTakeDamage);
+            Step(Steps(0.2f));
+            Assert.AreEqual(0f, hero.Velocity.x, 0.01f, "no scripted walk-out is left over");
+        }
+
+        [Test]
+        public void LeaveWithNoEnter_GivesControlBackAfterTheSafetyCap()
+        {
+            BuildWorld();
+            Settle();
+            driver.LeaveRoom(GatePosition.Right);
+            Step(Steps(4.5f));
+            Assert.IsTrue(hero.ControlLocked, "still locked inside the cap");
+
+            UnityEngine.TestTools.LogAssert.Expect(LogType.Error, new System.Text.RegularExpressions.Regex("never followed by EnterRoom"));
+            Step(Steps(0.7f));
+            Assert.IsFalse(hero.ControlLocked);
+            Assert.IsFalse(driver.IsInvulnerable);
+        }
+
+        [Test]
+        public void StunnedHero_LeavingKeepsTheStun_ThenWalksOut()
+        {
+            BuildWorld();
+            Settle();
+            Assert.IsTrue(Hit(1));
+            Assert.IsTrue(hero.Health.IsStunned, "test setup");
+            int healthAfterHit = hero.Health.Health;
+
+            driver.LeaveRoom(GatePosition.Right);
+            Step(Steps(0.1f));
+            Assert.IsTrue(hero.Health.IsStunned, "the stun runs on normally");
+            Assert.AreEqual(HeroState.Hurt, hero.State);
+
+            Step(Steps(0.4f));
+            Assert.IsFalse(hero.Health.IsStunned);
+            Assert.IsTrue(hero.ControlLocked);
+            Assert.AreEqual(config.RunSpeed, hero.Velocity.x, 0.01f, "after the stun the walk-out takes over");
+            Assert.IsFalse(Hit(1), "unhurtable while leaving");
+            Assert.AreEqual(healthAfterHit, hero.Health.Health);
+        }
+
+        [Test]
+        public void DisablingTheHero_MidTransition_DropsTheLock()
+        {
+            BuildWorld();
+            Settle();
+            var gate = MakeGate("left1", new Vector2(5f, 1f), Vector2.zero);
+            StartEntering(gate, 5f);
+            Step(3);
+            Assert.IsTrue(hero.ControlLocked);
+
+            hero.gameObject.SetActive(false);
+            Assert.IsFalse(hero.ControlLocked);
+            hero.gameObject.SetActive(true);
+            Step(1);
+
+            Assert.IsNull(entering);
+            Assert.IsTrue(Hit(1));
+        }
+
+        [Test]
+        public void EnterSideways_SpotInsideTheFloor_IsLiftedOut()
+        {
+            BuildWorld();
+            Settle();
+            // Hero centre 0.2 above the floor top: its bottom is 0.3 inside the floor.
+            var gate = MakeGate("left1", new Vector2(5f, 0.2f), Vector2.zero);
+            StartEntering(gate);
+            Assert.AreEqual(HeroHalfHeight, hero.transform.position.y, 0.05f);
+            StepUntilUnlocked(0.5f);
+            Assert.AreEqual(HeroHalfHeight, hero.transform.position.y, 0.05f);
+        }
+
+        [Test]
+        public void EnterTopGate_LandingAfterTheDropRaisesLanded()
+        {
+            // Intended: the drop is a real fall, so the normal landing is reported (a hard landing is stubbed).
+            BuildWorld();
+            Settle();
+            var gate = MakeGate("top1", new Vector2(3f, 3f), Vector2.zero);
+            StartEntering(gate);
+            Step(Steps(0.6f));
+            Assert.IsFalse(hero.ControlLocked);
+            Assert.IsTrue(hero.IsGrounded);
+            Assert.AreEqual(1, landedCount);
+        }
+
+        [Test]
+        public void ScriptedWalkIntoAWall_WhileAirborne_NeverClings()
+        {
+            BuildWorld();
+            Settle();
+            // No floor under the arrival spot, a wall just to its right (face at x = 6).
+            spawned[0].GetComponent<BoxCollider2D>().enabled = false;
+            var wall = new GameObject("Wall");
+            spawned.Add(wall);
+            wall.AddComponent<BoxCollider2D>().size = new Vector2(1f, 400f);
+            wall.transform.position = new Vector3(6.5f, 0f, 0f);
+            Physics2D.SyncTransforms();
+
+            var gate = MakeGate("left1", new Vector2(5.5f, 10f), Vector2.zero);
+            StartEntering(gate);
+            for (int i = 0; i < Steps(0.3f); i++)
+            {
+                Step(1);
+                Assert.AreNotEqual(HeroState.WallClinging, hero.State, "step " + i);
+            }
+            Assert.AreEqual(6f - HeroHalfWidth, hero.transform.position.x, 0.06f, "pressed against the wall");
+            Assert.Less(hero.Velocity.y, -config.WallSlideSpeed - 2f, "still falling freely, not sliding");
+        }
+
+        [Test]
+        public void ArrivalStubs_AreReported_ForTopAndBottomGates()
+        {
+            BuildWorld();
+            Settle();
+            StartEntering(MakeGate("top1", new Vector2(3f, 3f), Vector2.zero));
+            Assert.Contains("Gate hardLandOnExit (hard landing after a top-gate arrival)", new List<string>(Stubs.Reported));
+            driver.RestoreControl();
+            Step(1);
+            StartEntering(MakeGate("bot1", new Vector2(8f, 1f), Vector2.zero));
+            Assert.Contains("Gate alwaysEnterLeft/alwaysEnterRight facing at bottom gates", new List<string>(Stubs.Reported));
+        }
     }
 }

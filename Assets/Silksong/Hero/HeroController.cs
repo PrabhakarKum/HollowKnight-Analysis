@@ -35,6 +35,7 @@ namespace Hollowknight.Silksong
         // True while the hero ignores the player (set by HeroTransitionDriver).
         public bool ControlLocked { get; internal set; }
         public HeroTransitionDriver Transition => transition;
+        internal bool HasInput => rawInput != null;
         public HeroConfig Config { get; set; }
         // Optional: the hero plays nothing when no animator is assigned.
         public ISpriteAnimator Animator { get; set; }
@@ -130,11 +131,14 @@ namespace Hollowknight.Silksong
         // Exactly what one FixedUpdate does. Public so tests can run a known number of steps.
         public void StepFixed(float dt)
         {
-            if (rawInput == null || Config == null) return;
+            if (Config == null) return;
             // The transition driver ticks first: it times the walk-in and unlocks the controls in the step the walk
             // ends. When it owns the velocity outright (leaving upward, waiting to drop in, the bottom-gate throw)
             // movement and the wall must not run, like the dash; dash and attack see neutral input meanwhile.
             bool scripted = transition.FixedStep(dt);
+            // Ticked before the input check so a lock can never outlive the input; the driver also refuses to lock
+            // a hero that has no input (see HeroTransitionDriver.CanLock).
+            if (rawInput == null) return;
             // Health first: it ticks invulnerability, and while the hero is stunned by a hit (or dead) it owns the
             // velocity outright, like the dash does, so movement and the wall must not run (see HeroHealth).
             bool owned = health.FixedStep(dt);
@@ -143,9 +147,19 @@ namespace Hollowknight.Silksong
             // The swing starts before movement and wall so a swing on a wall changes the cling in this same
             // step; its pogo is applied after them because movement rewrites vertical velocity (see HeroAttack).
             attack.BeginStep(dt, dashed);
-            if (scripted && !owned) { /* the driver set the velocity; nothing else may overwrite it */ }
-            else if (owned) wall.BeginStep(dt);   // sees Hurt/Dead and lets go of everything; never starts a wall jump
+            if (owned) wall.BeginStep(dt);   // sees Hurt/Dead and lets go of everything; never starts a wall jump
             else if (dashed) wall.OnDashStep();
+            else if (scripted)
+            {
+                // The driver set the velocity itself (leaving upward, hovering, the bottom-gate throw): movement and
+                // the wall must not overwrite it.
+            }
+            else if (ControlLocked)
+            {
+                // A scripted walk or fall (room transition): movement only. The wall stays out so a scripted walk
+                // into a wall cannot start a cling, and the player's wall jump cannot fire.
+                movement.FixedStep(dt);
+            }
             else if (!wall.BeginStep(dt))
             {
                 // A wall jump handles its own step; otherwise movement runs and the wall adjusts its result.

@@ -35,6 +35,15 @@ namespace Hollowknight.Silksong
         const float GroundSearchDistance = 100f;
         // Same floor rule as HeroMovement: steeper surfaces are walls.
         const float MinFloorNormalY = 0.7f;
+        // Safety cap for the walk-out: the room manager normally replaces it with EnterRoom within a second or two
+        // (fade plus load). If nothing ever arrives (failed load, manager gone) the hero must not stay locked and
+        // unhurtable forever, so after this long the lock is dropped with an error. Not a HeroConfig value because
+        // it is a guard, not tuning.
+        const float LeaveTimeoutSeconds = 5f;
+        // An arrival spot that lies inside the floor is lifted by this much per try, at most this many times (2 units
+        // in all), before giving up with a warning.
+        const float EmbeddedLiftStep = 0.25f;
+        const int MaxEmbeddedLiftTries = 8;
 
         enum Phase { None, Leaving, Waiting, WalkingIn, Dropping, Thrown }
 
@@ -49,6 +58,8 @@ namespace Hollowknight.Silksong
 
         readonly ScriptedInput scripted = new ScriptedInput();
         readonly RaycastHit2D[] hits = new RaycastHit2D[8];
+        readonly Collider2D[] overlaps = new Collider2D[4];
+        float leaveElapsed;
 
         HeroController owner;
         Phase phase;
@@ -92,7 +103,16 @@ namespace Hollowknight.Silksong
         // Takes the controls and hero's vulnerability away and starts walking out through this side.
         public void LeaveRoom(GatePosition gate)
         {
+            if (!CanLock()) return;
             Lock();
+            leaveElapsed = 0f;
+            if (gate == GatePosition.Top)
+            {
+                // Played once here, not every step.
+                owner.IsGrounded = false;
+                owner.State = HeroState.Rising;
+                owner.Animator?.Play("Jump");
+            }
             inPosition = false;
             phase = Phase.Leaving;
             gateSide = gate;
@@ -118,6 +138,7 @@ namespace Hollowknight.Silksong
                 yield break;
             }
 
+            if (!CanLock()) yield break;
             Lock();
             gateSide = gate.Position;
             Vector2 spot = (Vector2)gate.transform.position + gate.EntryOffset;
@@ -145,11 +166,32 @@ namespace Hollowknight.Silksong
         // movement/wall must not run this step.
         internal bool FixedStep(float dt)
         {
+            bool owned = Tick(dt);
+            // When the driver sets the velocity, HeroMovement does not run and would leave the last Wants* flags stale.
+            if (owned) ClearIntent();
+            return owned;
+        }
+
+        void ClearIntent()
+        {
+            owner.WantsLeft = owner.WantsRight = owner.WantsUp = owner.WantsDown = false;
+        }
+
+        bool Tick(float dt)
+        {
             if (phase == Phase.None) return false;
 
             switch (phase)
             {
                 case Phase.Leaving:
+                    leaveElapsed += dt;
+                    if (leaveElapsed > LeaveTimeoutSeconds)
+                    {
+                        Debug.LogError("[Hero] LeaveRoom was never followed by EnterRoom after " + LeaveTimeoutSeconds
+                            + " s; giving the controls back.");
+                        RestoreControl();
+                        return false;
+                    }
                     return LeaveStep();
 
                 case Phase.Waiting:
@@ -167,7 +209,7 @@ namespace Hollowknight.Silksong
                         return false;
                     }
                     BeginMovePhase();
-                    return FixedStep(dt);
+                    return Tick(dt);
 
                 case Phase.WalkingIn:
                     if (remaining <= TimeEpsilon) { Finish(); return false; }
@@ -208,7 +250,7 @@ namespace Hollowknight.Silksong
                     owner.Body.linearVelocity = new Vector2(0f, owner.Config.TransitionLeaveUpSpeed);
                     owner.State = HeroState.Rising;
                     owner.IsGrounded = false;
-                    owner.Animator?.Play("Jump");
+                    ClearIntent();
                     return true;
                 default:
                     // Bottom: the original sets zero velocity; here the hero just keeps falling under gravity, which
@@ -270,11 +312,17 @@ namespace Hollowknight.Silksong
                     break;
                 case GatePosition.Top:
                     SetPosition(spot);
+                    // The gate's hardLandOnExit flag (a hard landing after the drop) is not built; the landing after
+                    // the drop is the normal one.
+                    Stubs.NotImplemented("Gate hardLandOnExit (hard landing after a top-gate arrival)");
                     owner.IsGrounded = false;
                     owner.State = HeroState.Falling;
                     owner.Animator?.Play("Fall");
                     break;
                 case GatePosition.Bottom:
+                    // The gate's alwaysEnterLeft / alwaysEnterRight (forced facing at a bottom gate) are not built; the
+                    // hero is thrown the way it already faces.
+                    Stubs.NotImplemented("Gate alwaysEnterLeft/alwaysEnterRight facing at bottom gates");
                     SetPosition(spot + new Vector2(0f, owner.Config.TransitionBottomLift));
                     owner.IsGrounded = false;
                     owner.State = HeroState.Rising;
@@ -305,11 +353,35 @@ namespace Hollowknight.Silksong
         {
             SetPosition(spot);
             var filter = new ContactFilter2D { useLayerMask = true, layerMask = owner.GroundLayers, useTriggers = false };
+            // A spot inside the floor would make the cast report distance 0 and leave the hero embedded, so lift it
+            // out first (bounded). Only a real overlap counts: a hero resting exactly on the floor does not overlap.
+            int tries = 0;
+            while (owner.BodyCollider.Overlap(filter, overlaps) > 0 && tries < MaxEmbeddedLiftTries)
+            {
+                spot += Vector2.up * EmbeddedLiftStep;
+                SetPosition(spot);
+                tries++;
+            }
+            if (tries == MaxEmbeddedLiftTries && owner.BodyCollider.Overlap(filter, overlaps) > 0)
+            {
+                Debug.LogWarning("[Hero] The arrival spot is inside solid ground and could not be lifted clear.");
+                return spot;
+            }
             int count = owner.BodyCollider.Cast(Vector2.down, filter, hits, GroundSearchDistance);
             float best = float.MaxValue;
             for (int i = 0; i < count; i++)
                 if (hits[i].normal.y >= MinFloorNormalY && hits[i].distance < best) best = hits[i].distance;
             return best < float.MaxValue ? spot + Vector2.down * best : spot;
+        }
+
+        // A transition needs the hero's input and config to run (HeroController.StepFixed does nothing without a
+        // config, and without input the hero would never tick). Refuse up front rather than lock a hero that can never
+        // be unlocked.
+        bool CanLock()
+        {
+            if (owner != null && owner.Config != null && owner.HasInput) return true;
+            Debug.LogError("[Hero] Cannot start a room transition: the hero has no input or config.");
+            return false;
         }
 
         // Wipes dash, cling, swing and jump, takes the controls, makes the hero unhurtable.
@@ -321,6 +393,7 @@ namespace Hollowknight.Silksong
             owner.Attack.CancelForDamage();
             owner.ResetMovement(false);
             scripted.Move = Vector2.zero;
+            ClearIntent();
             owner.ControlLocked = true;
             owner.Health.TransitionInvulnerable = true;
         }
