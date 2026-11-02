@@ -43,3 +43,7 @@ Parallel groups after Task 1: 2, 3, 4, 5 and the data part of 7. Then 6, then 8,
 ## Left open for later milestones
 
 Pickups and breakables staying broken after leaving a room (the data classes exist after Task 2, nothing uses them yet), camera lock areas (stubbed), doors, audio, real room art.
+
+## Milestone 2 status
+
+Tasks 1-9 are built. Task 9 adds `docs/study/M2-checklist.md` (the owner's hands-on acceptance list with a result table) and the PlayMode fixture `M2AcceptanceTests`, which walks every gate pair of the real generated rooms through the real gate triggers with scripted input, checks the facing rule, a spike hit in each room, death in Tut_01b back to the Tut_01 bench, a second death and a second full round trip with one hero, camera, manager and fader throughout. Still open: QA has not yet run the new fixture (rebuild the rooms with `TransitionRoomsBuilder.BuildBatch` first), the owner has not played the checklist, fade and walk-in timings are tuned by eye, and jump or dash into a gate is covered by hand only.

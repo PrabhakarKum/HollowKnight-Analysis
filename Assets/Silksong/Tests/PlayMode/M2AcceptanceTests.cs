@@ -316,7 +316,6 @@ namespace Hollowknight.Silksong.Tests
         {
             yield return StartWorld();
             var order = new[] { "Tut_01", "Tut_01b", "Tut_02" };
-            var via = new[] { null, new[] { "Tut_01", "right1" }, new[] { "Tut_01b", "left1" } };
             // Travel Tut_01 -> Tut_01b -> Tut_01 -> Tut_02 by real gates as needed.
             for (int i = 0; i < order.Length; i++)
             {
@@ -324,7 +323,8 @@ namespace Hollowknight.Silksong.Tests
                 if (room == "Tut_01b") { yield return PlaceInsideGate("Tut_01", "right1"); yield return WalkOutAndWait("Tut_01", "right1"); }
                 if (room == "Tut_02")
                 {
-                    yield return WalkOutAndWait("Tut_01b", "left1");                 // back to Tut_01 (arrival gate is right here)
+                    yield return PlaceInsideGate("Tut_01b", "left1");                // the hero is mid-room after the spikes
+                    yield return WalkOutAndWait("Tut_01b", "left1");                 // back to Tut_01
                     yield return PlaceInsideGate("Tut_01", "left3");
                     yield return WalkOutAndWait("Tut_01", "left3");
                 }
@@ -348,7 +348,6 @@ namespace Hollowknight.Silksong.Tests
                 Assert.AreEqual(room, SceneManager.GetActiveScene().name, "still in " + room);
                 Assert.AreEqual(1, Count<HeroController>());
             }
-            Assert.IsNotNull(via);   // documents the route above
         }
 
         IEnumerator KillAndWaitForRespawn()
@@ -383,7 +382,6 @@ namespace Hollowknight.Silksong.Tests
             yield return FullRound();
             AssertWorldIntact("Tut_01", heroId, "after the second full round");
             Assert.AreEqual(world.Hero.Health.MaxHealth, world.Hero.Health.Health);
-            Assert.AreEqual(2, GateRegistry.Count == 4 ? 2 : 2, "placeholder keeps the line short");
         }
     }
 }

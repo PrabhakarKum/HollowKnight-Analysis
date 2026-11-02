@@ -91,3 +91,5 @@ is no menu yet (stubbed).
   exits by itself).
 - EditMode tests: `TransitionRoomsBuilderTests` (builds into a temp folder, checks gates, links, floors, reachability).
 - PlayMode tests: `TransitionRoomsWalkTests` (needs the built rooms; walks all eight gate crossings of the table).
+
+Owner acceptance checklist for Milestone 2: `docs/study/M2-checklist.md`.
