@@ -23,3 +23,7 @@ Features that call `Stubs.NotImplemented`, added automatically in the Editor.
 - Transition rooms: exits Tut_01 left1 -> Tut_03, Tut_01 top1 -> Bonetown and Tut_01b right1 -> Weave_04 are not built
 - RoomWorldStarter: start menu and save slots (a room scene starts the world directly)
 - RoomWorldStarter: hero art needs Silksong/Import Hero Animations (a plain box is drawn)
+- Hero hazard respawn fade and recovery animation
+- Resting at benches: SetBenchRespawn on interaction (the bench is only set from a flagged Start marker when the world starts)
+- Death respawn: death screen, silk loss and cocoon (the hero is put at the bench after the delay)
+- Hazard respawn spot is not written to the save file on disk
