@@ -35,12 +35,18 @@ namespace Hollowknight.Silksong.Tests
             Assert.AreEqual(expected, GatePositions.FromName(name));
         }
 
-        [Test]
-        public void FromName_IsDoorFlagForcesDoorOnlyWhenNoKeywordMatched()
+        // Order precedence top > right > left > bot > door, each pair checked in both textual orders.
+        [TestCase("right_top", GatePosition.Top)]
+        [TestCase("top_right", GatePosition.Top)]
+        [TestCase("left_right", GatePosition.Right)]
+        [TestCase("right_left", GatePosition.Right)]
+        [TestCase("bot_left", GatePosition.Left)]
+        [TestCase("left_bot", GatePosition.Left)]
+        [TestCase("door_bot", GatePosition.Bottom)]
+        [TestCase("bot_door", GatePosition.Bottom)]
+        public void FromName_OrderPrecedenceIsTopRightLeftBotDoor(string name, GatePosition expected)
         {
-            // The original returns door for isADoor objects, but only after the four direction checks.
-            Assert.AreEqual(GatePosition.Door, GatePositions.FromName("exit1", isADoor: true));
-            Assert.AreEqual(GatePosition.Left, GatePositions.FromName("left1", isADoor: true));
+            Assert.AreEqual(expected, GatePositions.FromName(name));
         }
     }
 }

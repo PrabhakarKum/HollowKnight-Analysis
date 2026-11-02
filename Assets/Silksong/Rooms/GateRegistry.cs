@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace Hollowknight.Silksong
 {
@@ -11,6 +12,10 @@ namespace Hollowknight.Silksong
 
         public static int Count => Gates.Count;
 
+        // With domain reload disabled the list would keep gates from the last play session.
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetStatics() => Gates.Clear();
+
         public static void Register(TransitionPoint gate)
         {
             if (gate != null && !Gates.Contains(gate)) Gates.Add(gate);
@@ -21,24 +26,37 @@ namespace Hollowknight.Silksong
             Gates.Remove(gate);
         }
 
-        // The first gate with exactly this name. A missing name falls back to the first gate with a warning
-        // rather than failing: a typo in room data should still put the hero somewhere in the room (the
-        // original does the same). With no gates at all there is nothing to fall back on, so it logs an
-        // error and returns null.
-        public static TransitionPoint Find(string gateName)
+        // Search across ALL loaded rooms. Room names repeat (Tut_01 and Tut_01b both have left1, right1...),
+        // so Tasks 3 and 6 must use Find(name, scene) with the NEW room's scene; this overload is for tests.
+        public static TransitionPoint Find(string gateName) => FindIn(gateName, null);
+
+        // The gate with this name in this scene. A missing name falls back to the first gate of THAT scene
+        // with a warning (the original does the same); a scene without gates logs an error and returns null.
+        public static TransitionPoint Find(string gateName, Scene scene) => FindIn(gateName, scene);
+
+        // First registered gate of the scene, or null.
+        public static TransitionPoint FirstGate(Scene scene)
+        {
+            for (int i = 0; i < Gates.Count; i++)
+                if (Gates[i] != null && Gates[i].gameObject.scene == scene) return Gates[i];
+            return null;
+        }
+
+        static TransitionPoint FindIn(string gateName, Scene? scene)
         {
             TransitionPoint first = null;
             for (int i = 0; i < Gates.Count; i++)
             {
                 var gate = Gates[i];
                 if (gate == null) continue;   // destroyed with its scene without OnDisable running
+                if (scene.HasValue && gate.gameObject.scene != scene.Value) continue;
                 if (first == null) first = gate;
                 if (!string.IsNullOrEmpty(gateName) && gate.name == gateName) return gate;
             }
 
             if (first == null)
             {
-                Debug.LogError($"[Gates] Cannot find gate '{gateName}': there are no gates in the loaded rooms.");
+                Debug.LogError($"[Gates] Cannot find gate '{gateName}': there are no gates in the searched room.");
                 return null;
             }
 

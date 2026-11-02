@@ -96,6 +96,22 @@ namespace Hollowknight.Silksong.Tests
         }
 
         [Test]
+        public void Door_IsIgnoredEvenWhileEnteringLevel()
+        {
+            Assert.AreEqual(TransitionDecision.Ignore,
+                Eval(GatePosition.Door, Hero(velocityY: -5f), GameState.EnteringLevel));
+        }
+
+        [Test]
+        public void UnknownPosition_WithBusyHero_StillLeaves_AsInTheOriginal()
+        {
+            // The original's push-back only covers the four sides; a busy hero at an unnamed gate falls
+            // through to the target check and leaves. Pinned so a later change is deliberate.
+            Assert.AreEqual(TransitionDecision.Leave, Eval(GatePosition.Unknown, Hero(busy: true)));
+            Assert.AreEqual(TransitionDecision.Ignore, Eval(GatePosition.Unknown, Hero(busy: true), hasTarget: false));
+        }
+
+        [Test]
         public void EnteringLevel_AllowsOnlyABottomGateWhileTheHeroMovesDown()
         {
             var falling = Hero(velocityY: -5f, inPosition: true);

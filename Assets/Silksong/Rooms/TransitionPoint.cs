@@ -13,7 +13,15 @@ namespace Hollowknight.Silksong
     {
         // Set by RoomTransitionManager (Task 3) when it exists. Static because gates live in room scenes that
         // are loaded and unloaded around the manager, so they cannot hold a scene reference to it.
+        // Task 3 must set this to null in the manager's OnDisable/OnDestroy, or a destroyed manager stays
+        // referenced here.
         public static ITransitionRequestHandler Handler { get; set; }
+
+        // With domain reload disabled, statics survive between play sessions; clear them on every start.
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetStatics() => Handler = null;
+
+        public static void ResetHandlerForTests() => Handler = null;
 
         [SerializeField] string targetScene;
         // The original names this field entryPoint. Renamed to entryGate because it is the name of a gate
@@ -53,7 +61,16 @@ namespace Hollowknight.Silksong
             EntryDelay = entryDelay
         };
 
+        // Lets the gate fire again. Call it when the handler rejected a request (the gate already marked
+        // itself activated) or when the hero returns to the gate after a cancelled transition.
         public void ResetActivation() => activated = false;
+
+        // Editor "Reset" / first add: a gate is only useful as a trigger box.
+        void Reset()
+        {
+            var c = GetComponent<Collider2D>();
+            if (c != null) c.isTrigger = true;
+        }
 
         // Applies the rules and, on Leave, sends the request. Returns what was decided; the caller does the
         // physical push-back. Separate from the collider callbacks so it can be tested without physics.
@@ -61,6 +78,8 @@ namespace Hollowknight.Silksong
         {
             if (handler == null || activated) return TransitionDecision.Ignore;
 
+            // Doors are always ignored here (stub). The original also has an isADoor field and an interact
+            // press to enter; neither is built.
             if (Position == GatePosition.Door) Stubs.NotImplemented("TransitionPoint.Door");
 
             var decision = TransitionRules.Evaluate(Position, handler.State, handler.IsTransitionRunning, HasTarget, hero);

@@ -7,17 +7,58 @@ namespace Hollowknight.Silksong.Tests
     public class TransitionPointTests
     {
         GameObject go;
+        readonly List<GameObject> created = new List<GameObject>();
 
         [TearDown]
         public void TearDown()
         {
-            if (go != null) Object.DestroyImmediate(go);
+            foreach (var g in created) if (g != null) Object.DestroyImmediate(g);
+            created.Clear();
+            TransitionPoint.ResetHandlerForTests();
         }
 
         TransitionPoint Make(string name)
         {
             go = new GameObject(name);
+            created.Add(go);
+            // TransitionPoint requires a Collider2D, which is abstract, so Unity cannot add it itself.
+            go.AddComponent<BoxCollider2D>().isTrigger = true;
             return go.AddComponent<TransitionPoint>();
+        }
+
+        [Test]
+        public void Touch_BottomGateWhileEnteringLevel_HeroInPositionMovingDown_StillLeaves()
+        {
+            // Source TransitionPoint.cs L220-226. With the contract "IsTransitionRunning ends when State
+            // becomes EnteringLevel", the exception is reachable.
+            var gate = Make("bot1");
+            gate.Configure("Tut_01", "top1", Vector2.zero);
+            var handler = new FakeHandler { State = GameState.EnteringLevel, Running = false };
+            var hero = new HeroTransitionState { InPosition = true, VelocityY = -4f };
+            Assert.AreEqual(TransitionDecision.Leave, gate.Touch(handler, hero));
+            Assert.AreEqual(1, handler.Requests.Count);
+        }
+
+        [Test]
+        public void Touch_SecondRequestWhileExitingLevel_IsIgnored()
+        {
+            var gate = Make("right1");
+            gate.Configure("Tut_01b", "left1", Vector2.zero);
+            var handler = new FakeHandler { State = GameState.ExitingLevel, Running = true };
+            Assert.AreEqual(TransitionDecision.Ignore, gate.Touch(handler, OutwardRightHero()));
+            Assert.AreEqual(0, handler.Requests.Count);
+        }
+
+        [Test]
+        public void Reset_MakesTheColliderATrigger()
+        {
+            var gate = Make("left1");
+            var box = gate.GetComponent<BoxCollider2D>();
+            box.isTrigger = false;
+            // Reset is a private editor callback; invoke it the way the editor does.
+            typeof(TransitionPoint).GetMethod("Reset", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+                .Invoke(gate, null);
+            Assert.IsTrue(box.isTrigger);
         }
 
         static HeroTransitionState OutwardRightHero() => new HeroTransitionState { FacingRight = true, InPosition = true };
@@ -154,7 +195,8 @@ namespace Hollowknight.Silksong.Tests
         {
             Stubs.ResetForTests();
             // Keep the test from appending to the real docs/study/STUBS.md.
-            Stubs.StubsDocPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "stubs-doortest.md");
+            string tempDoc = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "stubs-doortest.md");
+            Stubs.StubsDocPath = tempDoc;
             try
             {
                 UnityEngine.TestTools.LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex("TransitionPoint.Door"));
@@ -164,7 +206,11 @@ namespace Hollowknight.Silksong.Tests
                 Assert.AreEqual(TransitionDecision.Ignore, gate.Touch(handler, OutwardRightHero()));
                 Assert.AreEqual(0, handler.Requests.Count);
             }
-            finally { Stubs.StubsDocPath = null; }
+            finally
+            {
+                Stubs.StubsDocPath = null;
+                if (System.IO.File.Exists(tempDoc)) System.IO.File.Delete(tempDoc);
+            }
         }
 
         class FakeHandler : ITransitionRequestHandler

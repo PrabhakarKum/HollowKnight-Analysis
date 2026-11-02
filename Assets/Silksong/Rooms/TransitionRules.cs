@@ -14,6 +14,9 @@ namespace Hollowknight.Silksong
     // rules never read hero internals or hero tuning numbers.
     public struct HeroTransitionState
     {
+        // World-space meaning: true = the hero faces / moves toward +x. NOTE the source reads this from the
+        // sprite scale (collider localScale.x < 0 means facing RIGHT for Hornet, whose art faces left).
+        // Task 4 must map the real hero's facing to this convention; do not copy the scale test blindly.
         public bool FacingRight;
         // Walking backwards while sprinting: moves against the way it faces, so "outward" is reversed.
         public bool BackSprinting;

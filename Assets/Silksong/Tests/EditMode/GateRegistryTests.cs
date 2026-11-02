@@ -21,16 +21,67 @@ namespace Hollowknight.Silksong.Tests
             GateRegistry.ClearForTests();
             foreach (var go in created) if (go != null) Object.DestroyImmediate(go);
             created.Clear();
+            foreach (var s in scenes)
+                if (s.IsValid()) UnityEditor.SceneManagement.EditorSceneManager.CloseScene(s, true);
+            scenes.Clear();
         }
 
         // EditMode does not run OnEnable on plain MonoBehaviours, so tests register gates explicitly.
-        TransitionPoint MakeGate(string name)
+        TransitionPoint MakeGate(string name, UnityEngine.SceneManagement.Scene? scene = null)
         {
             var go = new GameObject(name);
             created.Add(go);
+            // TransitionPoint requires a Collider2D, which is abstract, so Unity cannot add it itself.
+            go.AddComponent<BoxCollider2D>().isTrigger = true;
             var gate = go.AddComponent<TransitionPoint>();
+            if (scene.HasValue) UnityEngine.SceneManagement.SceneManager.MoveGameObjectToScene(go, scene.Value);
             GateRegistry.Register(gate);
             return gate;
+        }
+
+        readonly List<UnityEngine.SceneManagement.Scene> scenes = new List<UnityEngine.SceneManagement.Scene>();
+
+        UnityEngine.SceneManagement.Scene NewScene()
+        {
+            var s = UnityEditor.SceneManagement.EditorSceneManager.NewScene(
+                UnityEditor.SceneManagement.NewSceneSetup.EmptyScene, UnityEditor.SceneManagement.NewSceneMode.Additive);
+            scenes.Add(s);
+            return s;
+        }
+
+        [Test]
+        public void ScopedFind_SameNameInTwoScenes_ResolvesToTheRequestedScene()
+        {
+            var a = NewScene();
+            var b = NewScene();
+            var inA = MakeGate("left1", a);
+            var inB = MakeGate("left1", b);
+            Assert.AreSame(inA, GateRegistry.Find("left1", a));
+            Assert.AreSame(inB, GateRegistry.Find("left1", b));
+        }
+
+        [Test]
+        public void ScopedFind_MissingName_FallsBackToTheFirstGateOfThatScene()
+        {
+            var a = NewScene();
+            var b = NewScene();
+            MakeGate("left1", a);
+            var firstInB = MakeGate("right9", b);
+            MakeGate("right1", b);
+            LogAssert.Expect(LogType.Warning, new Regex("nope.*right9"));
+            Assert.AreSame(firstInB, GateRegistry.Find("nope", b));
+            Assert.AreSame(firstInB, GateRegistry.FirstGate(b));
+        }
+
+        [Test]
+        public void ScopedFind_SceneWithoutGates_ReturnsNullAndLogsAnError()
+        {
+            var a = NewScene();
+            var empty = NewScene();
+            MakeGate("left1", a);
+            LogAssert.Expect(LogType.Error, new Regex("no gates"));
+            Assert.IsNull(GateRegistry.Find("left1", empty));
+            Assert.IsNull(GateRegistry.FirstGate(empty));
         }
 
         [Test]

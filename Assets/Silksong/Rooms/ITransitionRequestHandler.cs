@@ -20,10 +20,15 @@ namespace Hollowknight.Silksong
         // Current game state; gates only fire while Playing (see TransitionRules).
         GameState State { get; }
 
-        // True from accepting a request until the hero has finished entering the next room.
+        // True from accepting a request until the new room is loaded and activated, i.e. until State
+        // becomes EnteringLevel. It must NOT stay true through the entering phase: that phase is carried by
+        // State == EnteringLevel, and gates need this false then so a bottom gate can be left straight away
+        // (TransitionRules checks this flag before the EnteringLevel exception).
         bool IsTransitionRunning { get; }
 
-        // Starts the room change. The handler must ignore a request while one is already running.
+        // Starts the room change. The handler must ignore a request while IsTransitionRunning is true.
+        // A gate marks itself activated when it sends a request; if the handler rejects it, call
+        // TransitionPoint.ResetActivation() on that gate or it will never fire again.
         void RequestTransition(TransitionRequest request);
     }
 }
