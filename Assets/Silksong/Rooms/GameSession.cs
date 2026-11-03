@@ -149,6 +149,7 @@ namespace Hollowknight.Silksong
             {
                 foreach (var wall in root.GetComponentsInChildren<BreakableWall>(true)) wall.Reapply();
                 foreach (var pickup in root.GetComponentsInChildren<Pickup>(true)) pickup.Reapply();
+                foreach (var enemy in root.GetComponentsInChildren<EnemyPersistence>(true)) enemy.Reapply();
             }
         }
 
