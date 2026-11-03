@@ -21,6 +21,13 @@ namespace Hollowknight.Silksong
         // frozen contract and has no field for it, so it is a named constant here.
         const float UnstickSeconds = 0.06f;
 
+        public const string SlideClipName = "WallSlide";
+        public const string ClingClipName = "WallCling";
+        // Downward speed (units/s) above which the slide clip starts, and below which it gives way to the cling.
+        const float SlideStartSpeed = 0.5f;
+        const float SlideStopSpeed = 0.1f;
+
+        bool slideClip;        // the slide clip is the one chosen for the current cling
         readonly RaycastHit2D[] hits = new RaycastHit2D[8];
         HeroController owner;
 
@@ -116,7 +123,7 @@ namespace Hollowknight.Silksong
                 owner.Body.linearVelocity = vel;
                 owner.State = HeroState.WallClinging;
                 owner.FacingRight = clingSide > 0;
-                owner.Animator?.Play("WallCling");
+                PlayClingClip(vel.y);
             }
             else
             {
@@ -178,8 +185,22 @@ namespace Hollowknight.Silksong
             unstickTime = 0f;
         }
 
+        // Sliding down the wall plays WallSlide (cloth and head move); a cling with no downward motion plays
+        // WallCling. The two thresholds keep the clip from flickering around zero speed. Nothing is replayed while
+        // the chosen clip is already playing.
+        void PlayClingClip(float velocityY)
+        {
+            var animator = owner.Animator;
+            if (animator == null) return;
+            if (slideClip) slideClip = velocityY < -SlideStopSpeed;
+            else slideClip = velocityY < -SlideStartSpeed;
+            string clip = slideClip ? SlideClipName : ClingClipName;
+            if (!animator.IsPlaying(clip)) animator.Play(clip);
+        }
+
         void BeginCling()
         {
+            slideClip = false;
             clinging = true;
             clingSide = touchingSide;
             unstickTime = 0f;

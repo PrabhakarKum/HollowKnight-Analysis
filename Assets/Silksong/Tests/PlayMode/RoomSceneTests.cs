@@ -374,7 +374,7 @@ namespace Hollowknight.Silksong.Tests
                 animator.Register(loop);
                 loopParts.Add(name);
             }
-            foreach (var expected in new[] { "Jump", "Fall", "WallCling", "SlashDown", "Death" })
+            foreach (var expected in new[] { "Jump", "Fall", "WallCling", "WallSlide", "SlashDown", "Death" })
                 CollectionAssert.Contains(loopParts, expected, expected + " is a LoopSection clip in the source");
             foreach (var name in names)
             {

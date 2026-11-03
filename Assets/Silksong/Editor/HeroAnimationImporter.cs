@@ -32,7 +32,7 @@ namespace Hollowknight.Silksong.Editor
             new Entry { HeroName = "Death",     SourceClip = "Death",      PlayedByHero = true },
             new Entry { HeroName = "Turn",      SourceClip = "Turn",       PlayedByHero = true },
             new Entry { HeroName = "Land",      SourceClip = "Land",       PlayedByHero = false },
-            new Entry { HeroName = "WallSlide", SourceClip = "Wall Slide", PlayedByHero = false },
+            new Entry { HeroName = "WallSlide", SourceClip = "Wall Slide", PlayedByHero = true },
             new Entry { HeroName = "WallJump",  SourceClip = "Walljump",   PlayedByHero = false },
             new Entry { HeroName = "SlashAlt",  SourceClip = "SlashAlt",   PlayedByHero = false },
         };
