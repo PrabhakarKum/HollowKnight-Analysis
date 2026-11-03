@@ -234,6 +234,15 @@ namespace Hollowknight.Silksong
             Physics2D.SyncTransforms();
         }
 
+        // Puts the hero at a spot of the current room facing a way, and jumps the camera to it (GameSession uses it to
+        // stand the hero on a respawn marker after the room was loaded).
+        public void PlaceHeroAt(Vector2 position, bool facingRight)
+        {
+            PlaceHero(position);
+            hero.FacingRight = facingRight;
+            if (Loader != null && Loader.CurrentRoom.IsValid()) EnterRoomView(Loader.CurrentRoom);
+        }
+
         // Bounds of the room and an instant snap to the hero; used where no transition ran.
         void EnterRoomView(Scene scene)
         {

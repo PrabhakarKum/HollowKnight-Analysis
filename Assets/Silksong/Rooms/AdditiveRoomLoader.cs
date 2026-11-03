@@ -69,6 +69,9 @@ namespace Hollowknight.Silksong
             if (scene.IsValid()) protectedHandles.Add(scene.handle);
         }
 
+        // Whether this scene was protected (the bootstrap's own scene); GameSession.Quit never unloads those.
+        public bool IsProtected(Scene scene) => scene.IsValid() && protectedHandles.Contains(scene.handle);
+
         bool TimedOut(float start) => Time.unscaledTime - start >= settings.loadTimeoutSeconds;
 
         public IEnumerator LoadHidden(string sceneName)

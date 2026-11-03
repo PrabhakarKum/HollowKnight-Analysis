@@ -43,7 +43,8 @@ namespace Hollowknight.Silksong
         }
 
         // The save slot used when a respawn is stored. Negative (the default) means do not write a file: the
-        // scene that wires up the real game sets it. Nothing saves from the death itself.
+        // scene that wires up the real game sets it (GameSession.StartGame uses the selected slot). Nothing saves from
+        // the death itself: the respawn saves after the refill, so a slot never holds health 0.
         public int SaveSlot { get; set; } = -1;
 
         // The hero's player data. Created from the new-game defaults when nobody supplies one.
@@ -288,6 +289,7 @@ namespace Hollowknight.Silksong
             Stubs.NotImplemented("Hero death animation and corpse");
             Stubs.NotImplemented("Hero death screen");
             Stubs.NotImplemented("Hero silk loss and cocoon on death");
+            Stubs.NotImplemented("Save at the moment of death (the original writes before the refill; this port saves in RespawnAt, after it)");
         }
 
         // A disabled hero comes back alive, unhurt and not invulnerable; a Hurt or Dead state must not outlive
