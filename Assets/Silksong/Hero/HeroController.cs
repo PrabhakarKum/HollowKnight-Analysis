@@ -147,6 +147,7 @@ namespace Hollowknight.Silksong
             // The swing starts before movement and wall so a swing on a wall changes the cling in this same
             // step; its pogo is applied after them because movement rewrites vertical velocity (see HeroAttack).
             attack.BeginStep(dt, dashed);
+            bool movementRan = false;
             if (owned) wall.BeginStep(dt);   // sees Hurt/Dead and lets go of everything; never starts a wall jump
             else if (dashed) wall.OnDashStep();
             else if (scripted)
@@ -159,13 +160,17 @@ namespace Hollowknight.Silksong
                 // A scripted walk or fall (room transition): movement only. The wall stays out so a scripted walk
                 // into a wall cannot start a cling, and the player's wall jump cannot fire.
                 movement.FixedStep(dt);
+                movementRan = true;
             }
             else if (!wall.BeginStep(dt))
             {
                 // A wall jump handles its own step; otherwise movement runs and the wall adjusts its result.
                 movement.FixedStep(dt);
+                movementRan = true;
                 wall.EndStep(dt);
             }
+            // Facing changed by a dash, wall jump, hit or scripted move must not look like a ground turn later.
+            if (!movementRan) movement.SyncFacing();
             attack.EndStep(dt);
         }
 

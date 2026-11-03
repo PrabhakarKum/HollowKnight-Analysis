@@ -24,6 +24,7 @@ It reads the library from `D:\Asset HollowKnight Bundles\ExportedProject\Assets\
 | Hurt | yes | `Recoil` | 9 | 24.2424 | Once | once | none |
 | Death | yes | `Death` | 16 | 12 | LoopSection, loop from frame 5 | once, holds the last frame + `Death Loop` | none |
 | Land | yes (on touchdown, standing still) | `Land` | 14 | 24 | Once | once | none |
+| Turn | yes (grounded facing reversal) | `Turn` | 6 | 18 | Once | once | one on frame 1 (no name), `Footstep` on frame 5 |
 | WallSlide | no (later) | `Wall Slide` | 9 | 12 | LoopSection, loop from frame 6 | once + `WallSlide Loop` | none |
 | WallJump | no (later) | `Walljump` | 14 | 15 | Once | once | none |
 | SlashAlt | no (later) | `SlashAlt` | 5 | 20 | Once | once | none |
@@ -67,3 +68,19 @@ The Knight library holds 534 clips but only 501 distinct names. When a name appe
 **What the original does (read from its `HeroAnimationController`).** It also plays `Land` on airborne-to-idle (`Land Q`, a quieter version, when hurt or enraged) and holds Idle back while `Land` or any of a list of "settle" clips runs; when the clip ends it plays Idle. It differs in four ways: (1) landing while running plays `Land To Run`, not `Run` straight away; (2) a landing during a swing plays `Slash Land` / `Slash Land Run`; (3) a hard landing after a long fall is a separate state and clip, `HardLand`; (4) `Land To Run` is also used when the player starts running during `Land`. None of these clips is imported; the hero uses `Run` for (1) and (4), and has no hard-landing state, so (3) is not built. PROVISIONAL.
 
 **Other abrupt cuts that exist today (listed, not built).** The original has a transition clip for each: Idle to Run = `Idle To Run` (and `Idle To Run Short`, `Idle To Run Weak`); Run to Idle = `Run To Idle` (`Walk To Idle`); Dash to Idle = `Dash To Idle`, Dash to Run = `Dash To Run`; Sprint to Run = `Sprint To Run`; Slash to Run = `Slash To Run`; Fall = `Airborne` from frame 7, not a separate `Fall`; Fall to Land = `Land`. The hero code switches straight between the plain clips for all of them (item 5 above for dash). Also, the hero's movement step used to replace a swing's clip with Idle/Run/Fall on the step the swing started; it now leaves the `Slash*` clips alone while a swing is active.
+
+## Turn (reversing direction on the ground)
+
+**What it does.** When the hero is standing or running on the floor and its facing reverses, the `Turn` clip plays once (6 frames at 18 fps). It is only decoration: the facing, the hitbox and the movement change on the very same step, and nothing waits for the clip. Run speed is unchanged.
+
+**When it plays.** On a grounded reversal, unless the hero was clinging to a wall on the step before, is under a scripted move (room-transition walk), or is hurt or dead. A reversal made in the air, during a dash, a swing or a wall jump plays nothing, and a facing change made during one of those is not "remembered" and played later on the ground. Spawning or respawning facing left is not a turn either. The original also refuses while its get-up-from-the-ground and hazard-respawn clips play; those are not built here.
+
+**While it runs.** The per-step `Idle` and `Run` requests are held back while our own `Turn` is playing (the original does the same through `IsPlayingTurn`). Anything else cuts it at once: jumping or falling, a dash, a swing, a hit, death. When it ends the normal `Idle` or `Run` follows. If an animator has no `Turn` clip (art imported before this change, or a test animator) nothing special happens: the request is ignored and `Idle`/`Run` carry on as before.
+
+**The flip.** In the original, a facing change flips the sprite's scale immediately (`FlipSprite`) and then asks for the clip, so the clip is drawn on the already-flipped object and its first frames are the old pose seen from the new side. We do the same: `HeroArtFlip` / `HeroSceneBootstrap.LateUpdate` mirror the sprite on the step facing changes, and `Turn` just plays. I could not look at the art itself, so whether the first frame reads correctly after the mirror is for the owner to judge in play. PROVISIONAL.
+
+**Skipped on purpose.** `TurnWalk` is the same turn inside a "walk zone" (slow-walk areas); we have none, so it is not imported and never requested. `TurnToIdle`, a settle clip after the turn, is also skipped. Both are reported through `Stubs.NotImplemented`-style notes here rather than code, because there is no code path that would reach them.
+
+**What the owner must do.** Run `Silksong > Import Hero Animations` once. `Turn` is now on the "played by hero code" list, so the scene builders treat a missing `Turn.anim` the same as any other missing clip until it is imported.
+
+Code: `Hero/HeroTurnRules.cs` (the pure decision, unit tested), `Hero/HeroMovement.cs` (tracks facing and holds Idle/Run), tests in `HeroTurnRulesTests` and `HeroTurnAnimationTests`.

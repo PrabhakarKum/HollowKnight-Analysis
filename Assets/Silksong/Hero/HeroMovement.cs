@@ -28,6 +28,12 @@ namespace Hollowknight.Silksong
         bool landPending;
         bool landing;
 
+        // Turn animation (cosmetic): the facing seen on the last step, and whether our own "Turn" is running.
+        bool lastFacingRight = true;
+        bool facingKnown;
+        bool turnPending;
+        bool turning;
+
         // Seconds since the hero left the floor (0 on the step it left); a ledge jump is allowed while
         // this is within CoyoteSeconds, inclusive.
         float airTime;
@@ -52,6 +58,7 @@ namespace Hollowknight.Silksong
             var input = owner.Input;
             var body = owner.Body;
             Vector2 vel = body.linearVelocity;
+            HeroState previousState = owner.State;
 
             ReadIntent(input.Move, cfg);
 
@@ -111,17 +118,27 @@ namespace Hollowknight.Silksong
 
             wasGrounded = grounded;
             owner.IsGrounded = grounded;
+            // The first step only learns the facing, so spawning facing left is not a turn.
+            bool facingReversed = facingKnown && owner.FacingRight != lastFacingRight;
+            facingKnown = true;
+            lastFacingRight = owner.FacingRight;
             // Hurt and Dead belong to the health system: movement must not overwrite them (it ran over them
             // before the damage task existed). Health hands the state back itself when the stun ends.
-            if (owner.State == HeroState.Hurt || owner.State == HeroState.Dead) { landPending = landing = false; return; }
+            if (owner.State == HeroState.Hurt || owner.State == HeroState.Dead) { landPending = landing = turning = false; return; }
             owner.State = grounded ? HeroState.Grounded : (vel.y > 0f ? HeroState.Rising : HeroState.Falling);
+            turnPending = HeroTurnRules.ShouldPlayTurn(facingReversed, owner.State, previousState, owner.ControlLocked);
             PlayAnimation(dir != 0);
         }
+
+        // Called on steps where movement did not run (dash, wall jump, hurt, scripted move) so a facing change made
+        // there is not mistaken for a ground turn when movement runs again.
+        internal void SyncFacing() { lastFacingRight = owner.FacingRight; facingKnown = true; }
 
         // Hurt, death and respawn drop a jump in progress, the buffered press and the coyote window, and forget
         // the ground contact only when asked (respawn), so a hit that leaves the hero on the floor never raises Landed.
         public void ResetForDamage(bool forgetGround)
         {
+            turnPending = turning = false;
             jumping = false;
             jumpElapsed = 0f;
             landPending = landing = false;
@@ -202,19 +219,31 @@ namespace Hollowknight.Silksong
         void PlayAnimation(bool moving)
         {
             if (owner.State != HeroState.Grounded || moving) landPending = landing = false;
+            if (owner.State != HeroState.Grounded) turnPending = turning = false;
             var anim = owner.Animator;
-            if (anim == null) return;
+            if (anim == null) { turnPending = turning = false; return; }
             // A swing is an overlay on movement (HeroAttack sets no HeroState): do not replace its clip with
             // Idle/Run/Fall on the step it started, or it would never show.
             if (owner.Attack != null && owner.Attack.IsAttacking
                 && (anim.IsPlaying("Slash") || anim.IsPlaying("SlashUp") || anim.IsPlaying("SlashDown")))
             {
-                landPending = landing = false;
+                landPending = landing = turnPending = turning = false;
                 return;
             }
             switch (owner.State)
             {
                 case HeroState.Grounded:
+                    if (turnPending)
+                    {
+                        // Reversal on the floor: Turn plays once and wins over Land. If the animator has no such
+                        // clip it does not start playing, and the normal Idle/Run below runs as before.
+                        turnPending = false;
+                        anim.Play("Turn");
+                        turning = anim.IsPlaying("Turn");
+                        if (turning) { landPending = landing = false; break; }
+                    }
+                    else if (HeroTurnRules.ShouldHoldIdleOrRun(turning, anim.IsPlaying("Turn"))) break;
+                    turning = false;
                     if (moving) anim.Play("Run");
                     else if (landPending)
                     {

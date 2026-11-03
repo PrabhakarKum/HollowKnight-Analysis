@@ -37,7 +37,7 @@ namespace Hollowknight.Silksong
         // Played by the current hero code. All of these must exist as imported clips.
         public static readonly string[] PlayedByHeroCode =
         {
-            "Idle", "Run", "Jump", "Fall", "Dash", "WallCling", "Slash", "SlashUp", "SlashDown", "Hurt", "Death"
+            "Idle", "Run", "Jump", "Fall", "Dash", "WallCling", "Slash", "SlashUp", "SlashDown", "Hurt", "Death", "Turn"
         };
 
         // In the plan's list but not yet played by hero code (landing, wall slide, wall jump, alternate swing).

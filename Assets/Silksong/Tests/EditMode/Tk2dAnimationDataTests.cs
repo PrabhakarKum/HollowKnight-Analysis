@@ -478,7 +478,7 @@ namespace Hollowknight.Silksong.Tests
         static readonly string[] KnightNames =
         {
             "Idle", "Run", "Airborne", "Fall", "Dash", "Wall Cling", "Slash", "UpSlash", "DownSpike", "Recoil",
-            "Death", "Land", "Wall Slide", "Walljump", "SlashAlt"
+            "Death", "Turn", "Land", "Wall Slide", "Walljump", "SlashAlt"
         };
 
         [Test]
