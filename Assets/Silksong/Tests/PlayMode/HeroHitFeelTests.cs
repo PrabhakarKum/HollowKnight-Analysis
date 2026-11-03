@@ -278,13 +278,14 @@ namespace Hollowknight.Silksong.Tests
             MakeEnemyInReach();
             Swing(Vector2.zero);
             Assert.IsTrue(hero.Attack.IsRecoiling);
-            input.Move = new Vector2(1f, 0f);
+            input.Move = new Vector2(-1f, 0f);   // dash AWAY from the enemy: dashing into it hurts the hero and cancels the dash
             input.DashButton.Release();
             input.DashButton.Press();
             Step(1);
-            Assert.IsTrue(hero.Dash.IsDashing, "test setup: the dash started");
+            string diag = " state=" + hero.State + " health=" + hero.Health.Health + "/" + hero.Health.MaxHealth + " grounded=" + hero.IsGrounded + " x=" + hero.transform.position.x;
+            Assert.IsTrue(hero.Dash.IsDashing, "test setup: the dash started" + diag);
             Assert.IsFalse(hero.Attack.IsRecoiling);
-            Assert.Greater(Mathf.Abs(hero.Velocity.x), heroConfig.NailRecoilSpeed + 1f, "the dash owns the velocity");
+            Assert.Less(hero.Velocity.x, -(heroConfig.NailRecoilSpeed + 1f), "the dash owns the velocity" + diag);
         }
 
         [Test]
