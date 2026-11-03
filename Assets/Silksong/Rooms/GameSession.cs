@@ -185,7 +185,11 @@ namespace Hollowknight.Silksong
 
         static IEnumerator DestroyWorld(RoomWorldBootstrap world)
         {
-            if (world == null) yield break;
+            if (world == null)
+            {
+                yield return UnloadLeftoverHost();
+                yield break;
+            }
             var loader = world.Loader;
             // Destroying the world also stops its coroutines (a transition in progress) and destroys hero and camera.
             UnityEngine.Object.Destroy(world.gameObject);
@@ -201,7 +205,22 @@ namespace Hollowknight.Silksong
                     if (op != null) yield return op;
                 }
             }
+            yield return UnloadLeftoverHost();
             yield return null;
+        }
+
+        // The empty scene RoomWorldFactory created to host the bootstrap. No world is alive when this runs, so the
+        // scene protects nothing; it is only unloaded when empty and not the active scene, and never when a live
+        // bootstrap exists.
+        static IEnumerator UnloadLeftoverHost()
+        {
+            if (RoomWorldBootstrap.Instance != null) yield break;
+            var host = SceneManager.GetSceneByName(RoomWorldFactory.HostSceneName);
+            if (!host.IsValid() || !host.isLoaded) yield break;
+            if (host.rootCount != 0 || SceneManager.sceneCount < 2) yield break;
+            if (SceneManager.GetActiveScene() == host) yield break;
+            var op = SceneManager.UnloadSceneAsync(host);
+            if (op != null) yield return op;
         }
     }
 

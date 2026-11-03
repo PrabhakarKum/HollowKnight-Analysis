@@ -19,7 +19,9 @@ namespace Hollowknight.Silksong
             // room the hero starts in (or the start screen), so it is created while a throw-away host scene is
             // active; the bootstrap then moves itself out of that scene and the empty host stays unused.
             var previous = SceneManager.GetActiveScene();
-            var host = SceneManager.CreateScene(HostSceneName);
+            // A host left over from an earlier game is reused: CreateScene throws when the name already exists.
+            var host = SceneManager.GetSceneByName(HostSceneName);
+            if (!host.IsValid() || !host.isLoaded) host = SceneManager.CreateScene(HostSceneName);
             SceneManager.SetActiveScene(host);
 
             var inputGo = new GameObject("RoomWorldInput");
