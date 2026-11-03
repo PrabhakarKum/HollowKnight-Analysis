@@ -79,7 +79,7 @@ The Knight library holds 534 clips but only 501 distinct names. When a name appe
 
 **The flip.** In the original, a facing change flips the sprite's scale immediately (`FlipSprite`) and then asks for the clip, so the clip is drawn on the already-flipped object and its first frames are the old pose seen from the new side. We do the same: `HeroArtFlip` / `HeroSceneBootstrap.LateUpdate` mirror the sprite on the step facing changes, and `Turn` just plays. I could not look at the art itself, so whether the first frame reads correctly after the mirror is for the owner to judge in play. PROVISIONAL.
 
-**Skipped on purpose.** `TurnWalk` is the same turn inside a "walk zone" (slow-walk areas); we have none, so it is not imported and never requested. `TurnToIdle`, a settle clip after the turn, is also skipped. Both are reported through `Stubs.NotImplemented`-style notes here rather than code, because there is no code path that would reach them.
+**Skipped on purpose.** `TurnWalk` is the same turn inside a "walk zone" (slow-walk areas); we have none, so it is not imported and never requested. `TurnToIdle`, a settle clip after the turn, is also skipped. The first `Turn` request reports both through `Stubs.NotImplemented("Hero TurnWalk and TurnToIdle ...")`, so they appear in `STUBS.md`.
 
 **What the owner must do.** Run `Silksong > Import Hero Animations` once. `Turn` is now on the "played by hero code" list, so the scene builders treat a missing `Turn.anim` the same as any other missing clip until it is imported.
 

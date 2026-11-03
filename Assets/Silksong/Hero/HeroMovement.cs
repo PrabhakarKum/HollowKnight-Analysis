@@ -238,6 +238,7 @@ namespace Hollowknight.Silksong
                         // Reversal on the floor: Turn plays once and wins over Land. If the animator has no such
                         // clip it does not start playing, and the normal Idle/Run below runs as before.
                         turnPending = false;
+                        Stubs.NotImplemented("Hero TurnWalk and TurnToIdle (walk zones are not built)");
                         anim.Play("Turn");
                         turning = anim.IsPlaying("Turn");
                         if (turning) { landPending = landing = false; break; }
