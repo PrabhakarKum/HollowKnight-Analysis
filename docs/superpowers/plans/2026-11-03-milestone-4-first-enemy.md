@@ -19,6 +19,17 @@ A Silksong-style enemy stands in one of the grey-box rooms. It patrols, notices 
 | Scope | The first enemy in a Silksong room, not a boss, not tools and map. A boss is a later milestone. |
 | Your old enemies | Leave them alone. The Silksong-style enemy is new, separate code in `Assets/Silksong`. Your four enemy configs, `Brawler.asset` and their tuned values are not touched or reused. |
 
+Decisions after the Task 1 study (`docs/study/14-enemies.md`):
+
+| Question | Decision |
+|---|---|
+| First enemy | The Moss Creep (MossBone Crawler): 3 in Tut_01b, 8 in Tut_02. It only walks at 3 u/s, turns at walls and ledges, and hurts on touch (damage 1). The "notice, chase, attack" brain in Tasks 2 and 3 shrinks to Walking, Turning and Dead. A chasing or shooting enemy is a later milestone. |
+| Stay dead | A per-enemy "stays dead" setting, on for the first enemy so the saving can be seen. The original lets ordinary enemies return on every room load. |
+| Hits to kill | 2 nail hits (health 2 with our nail damage of 1). |
+| Hit reaction | White flash (0.07 s hold, 0.05 s fall, 0.85 strength), a 15 u/s x 0.15 s shove while it keeps walking, no stun and no invulnerability window. A dying enemy stops dealing damage. |
+| Hero feedback | Silk +1 per damaging nail hit (capped). After a downspike hit the hero ignores enemy contact for 2 steps; because that rule lives in `HeroHealth`, Task 5 may also make a minimal additive edit there. |
+| Art | Placeholder shape first; the real `Walk` / `Turn` / death clips can follow, since the existing converter is generic. |
+
 Standing rules apply: private branches `agent/builder/*` in worktrees; builders never open Unity; QA is the only Unity runner (quote paths with spaces; scratch copies only); merge into `main` only after the owner says yes; no co-author lines; do not touch `SampleScene`, `Brawler.asset`, `HeroInputActions.inputactions` or `HeroConfig.asset` values; keep third-party vendor code out; every "not implemented yet" feature logs through `Stubs.NotImplemented`; test code can only use public members of the product assembly.
 
 ## Tasks
