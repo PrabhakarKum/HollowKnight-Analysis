@@ -2,7 +2,8 @@
     "name": "Hollowknight.Silksong",
     "rootNamespace": "Hollowknight.Silksong",
     "references": [
-        "Unity.InputSystem"
+        "Unity.InputSystem",
+        "UnityEngine.UI"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

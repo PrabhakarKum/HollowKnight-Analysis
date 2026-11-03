@@ -61,9 +61,7 @@ namespace Hollowknight.Silksong
             }
 
             Stubs.NotImplemented("RoomWorldStarter: start menu and save slots (a room scene starts the world directly)");
-            var world = CreateWorld();
-            AddHeroArt(world.Hero);
-            world.Hero.gameObject.AddComponent<HeroInterpolation>();
+            var world = RoomWorldFactory.Create(config, actionsAsset, heroSprite, heroClips, artFacesLeft, null);
 
             Vector2 spot;
             if (startPoint != null) spot = startPoint.transform.position;
@@ -76,68 +74,10 @@ namespace Hollowknight.Silksong
             world.PlaceHero(spot);
             world.AdoptRoom(room);
             if (startPoint != null && startPoint.SetsBenchRespawn) world.SetBenchRespawn(startPoint);
-            if (world.RoomCamera.GetComponent<AudioListener>() == null) world.RoomCamera.gameObject.AddComponent<AudioListener>();
             Debug.Log("[World] Started in room '" + room.name + "'.");
         }
-
-        RoomWorldBootstrap CreateWorld()
-        {
-            // The bootstrap protects the scene it is created in (that scene is never unloaded). That must not be the
-            // room the hero starts in, so it is created while a throw-away host scene is active; the bootstrap then
-            // moves itself out of that scene and the empty host stays unused.
-            var previous = SceneManager.GetActiveScene();
-            var host = SceneManager.CreateScene("RoomWorldHost");
-            SceneManager.SetActiveScene(host);
-
-            var inputGo = new GameObject("RoomWorldInput");
-            var actions = inputGo.AddComponent<HeroActions>();
-            actions.Initialize(actionsAsset);
-
-            var world = RoomWorldBootstrap.Create(config, actions, null, MakeSource());
-            // The input lives and dies with the world.
-            inputGo.transform.SetParent(world.transform, false);
-
-            if (previous.IsValid() && previous.isLoaded) SceneManager.SetActiveScene(previous);
-            return world;
-        }
-
-        static IRoomSceneSource MakeSource()
-        {
-#if UNITY_EDITOR
-            Debug.Log("[World] Editor: rooms in Build Settings load by name; the others load from " + RoomsFolder + " by path.");
-            return new FallbackRoomSceneSource(new BuildSettingsSceneSource(), new EditorPathSceneSource(ScenePath));
-#else
-            return new BuildSettingsSceneSource();
-#endif
-        }
-
-        void AddHeroArt(HeroController hero)
-        {
-            var go = new GameObject("Visual");
-            go.transform.SetParent(hero.transform, false);
-            var sr = go.AddComponent<SpriteRenderer>();
-            sr.sortingOrder = 5;
-            sr.sprite = heroSprite;
-
-            bool hasClips = heroClips != null && heroClips.Length > 0;
-            if (hasClips)
-            {
-                // Sprite origin = hero root, as in HeroSceneBuilder.
-                var animator = go.AddComponent<UnitySpriteAnimator>();
-                foreach (var clip in heroClips) animator.Register(clip);
-                hero.Animator = animator;
-            }
-            else
-            {
-                // No imported art: a box the size of the body so the hero can be seen.
-                go.transform.localPosition = SilksongUnits.HeroColliderOffset;
-                go.transform.localScale = new Vector3(SilksongUnits.HeroColliderSize.x, SilksongUnits.HeroColliderSize.y, 1f);
-                sr.color = new Color(0.95f, 0.6f, 0.2f);
-                Stubs.NotImplemented("RoomWorldStarter: hero art needs Silksong/Import Hero Animations (a plain box is drawn)");
-            }
-            go.AddComponent<HeroArtFlip>().Configure(hero, sr, artFacesLeft && hasClips);
-        }
     }
+
 
     // Asks the first source, and the second when the first does not have the scene. Lets the Editor use Build
     // Settings when a room is listed there and the asset path when it is not.
