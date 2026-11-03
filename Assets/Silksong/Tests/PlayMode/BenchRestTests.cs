@@ -243,7 +243,8 @@ namespace Hollowknight.Silksong.Tests
             bench.Rested += () => rested = true;
             yield return Until(() => rested, "Rested");
             Assert.IsFalse(world.Hero.ControlLocked);
-            Assert.IsFalse(world.Hero.Health.TransitionInvulnerable);
+            // TransitionInvulnerable is internal to the product assembly; CanTakeDamage includes it.
+            Assert.IsTrue(world.Hero.Health.CanTakeDamage, "the rest's invulnerability is released");
             Assert.IsFalse(bench.IsResting);
             Assert.AreEqual(0f, world.Fader.Alpha, 1e-4f, "screen is visible again");
         }
