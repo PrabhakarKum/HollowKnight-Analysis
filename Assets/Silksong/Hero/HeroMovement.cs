@@ -230,6 +230,10 @@ namespace Hollowknight.Silksong
                 landPending = landing = turnPending = turning = false;
                 return;
             }
+            // On a wall HeroWall chooses the clip (WallSlide or WallCling). Movement runs first in every step and
+            // used to play Fall here, which HeroWall then replaced: the cling clip restarted from its first frame
+            // every step and the hero looked frozen.
+            if (owner.State != HeroState.Grounded && owner.Wall != null && owner.Wall.IsClinging) return;
             switch (owner.State)
             {
                 case HeroState.Grounded:
