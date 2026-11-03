@@ -63,8 +63,26 @@ namespace Hollowknight.Silksong.Editor
         }
     }
 
+    // A wall the nail breaks (Task 3 of Milestone 3). Id is the explicit PersistentBool id, unique within the room.
+    public sealed class BreakableWallSpec
+    {
+        public readonly string Id;
+        public readonly float MinX, MaxX, Top, Bottom;
+        public BreakableWallSpec(string id, float minX, float maxX, float top, float bottom) { Id = id; MinX = minX; MaxX = maxX; Top = top; Bottom = bottom; }
+    }
+
+    // A pickup standing on a floor: X is its centre, GroundTop the floor under it. It is a PickupSize square.
+    public sealed class PickupSpec
+    {
+        public readonly string Id;
+        public readonly float X, GroundTop;
+        public PickupSpec(string id, float x, float groundTop) { Id = id; X = x; GroundTop = groundTop; }
+    }
+
     public sealed class RoomSpec
     {
+        public readonly List<BreakableWallSpec> BreakableWalls = new List<BreakableWallSpec>();
+        public readonly List<PickupSpec> Pickups = new List<PickupSpec>();
         // True: the Start marker is the bench (the death respawn). Only the start room, Tut_01.
         public bool StartIsBench;
         public readonly List<SpikeSpec> Spikes = new List<SpikeSpec>();
@@ -113,6 +131,11 @@ namespace Hollowknight.Silksong.Editor
         // Gate trigger box: 1 wide, 4 tall, standing on the floor at the room edge, half outside the room like the
         // original's. The wall has a 5 high opening there and a floor stub carries the hero out and in.
         public const float GateWidth = 1f, GateHeight = 4f, OpeningHeight = 5f, StubLength = 4f;
+
+        // The explicit save ids of the Tut_01 wall and pickup (scene name + id is the save key; never rename these).
+        public const string Tut01WallId = "Tut_01_BreakableWall_1";
+        public const string Tut01PickupId = "Tut_01_Pickup_1";
+        public const float PickupSize = 1f;
 
         const string MissingAssetMessage = "Required asset missing or not imported: ";
 
@@ -285,6 +308,14 @@ namespace Hollowknight.Silksong.Editor
             r.Gates.Add(new GateSpec("right2", 7.5f, "Tut_01b", "left2"));
             r.Gates.Add(new GateSpec("left2", 5f, "Tut_02", "right1"));
             r.Gates.Add(new GateSpec("left3", 0f, "Tut_02", "right2"));
+            // Rooms that remember (Milestone 3 task 3). A shelf continues PlatformB to the left wall, and a roof closes
+            // its far end into a nook (3 high inside, the hero is 2.1). The breakable wall seals the nook; the hero
+            // reaches the shelf the same way it reaches PlatformB, and breaks the wall with the nail. The pickup sits on
+            // StepLeft, which the hero walks over anyway. No existing coordinate is changed.
+            r.Blocks.Add(new BlockSpec("ShelfLeft", 0f, 12f, 12.5f, 12f));
+            r.Blocks.Add(new BlockSpec("NookRoof", 0f, 6f, 16f, 15.5f));
+            r.BreakableWalls.Add(new BreakableWallSpec(Tut01WallId, 6f, 7f, 15.5f, 12.5f));
+            r.Pickups.Add(new PickupSpec(Tut01PickupId, 10f, 2.5f));
             r.StartIsBench = true;
             // Walk right along the ledge: touch the yellow trigger, then fall into the spikes and reappear at its marker.
             r.HazardSpots.Add(new HazardSpotSpec("HazardA", 25.5f, 28.5f, 27f, 7.5f, true));
@@ -375,6 +406,10 @@ namespace Hollowknight.Silksong.Editor
             foreach (var h in spec.HazardSpots) BuildHazardSpot(hazards, h, assets.WhiteSprite);
             foreach (var s in spec.Spikes) BuildSpikes(hazards, s, assets.WhiteSprite);
 
+            var memory = Child(root.transform, "Memory");
+            foreach (var w in spec.BreakableWalls) BuildBreakableWall(memory, w, spec.Tint, assets.WhiteSprite);
+            foreach (var p in spec.Pickups) BuildPickup(memory, p, assets.WhiteSprite);
+
             var bounds = RoomBounds.Create(new Rect(0f, 0f, spec.Width, spec.Height));
             bounds.transform.SetParent(root.transform, false);
             info.Configure(spec.Name, 13, "Moss Cave", bounds);
@@ -435,6 +470,26 @@ namespace Hollowknight.Silksong.Editor
             box.size = Vector2.one;
             box.isTrigger = true;
             vis.gameObject.AddComponent<HazardZone>().SetRespawnsHero(true);
+        }
+
+        // A lighter, solid box so it reads as breakable; the object name is the id so the hierarchy shows it.
+        static void BuildBreakableWall(Transform parent, BreakableWallSpec w, Color tint, Sprite sprite)
+        {
+            var center = new Vector2((w.MinX + w.MaxX) * 0.5f, (w.Top + w.Bottom) * 0.5f);
+            var vis = Visual(parent, w.Id, center, new Vector2(w.MaxX - w.MinX, w.Top - w.Bottom), Color.Lerp(tint, Color.white, 0.5f), sprite);
+            vis.sortingOrder = 1;
+            vis.gameObject.AddComponent<BoxCollider2D>().size = Vector2.one;   // solid; the scale carries the size
+            vis.gameObject.AddComponent<BreakableWall>().Configure(w.Id);
+        }
+
+        static void BuildPickup(Transform parent, PickupSpec p, Sprite sprite)
+        {
+            var vis = Visual(parent, p.Id, new Vector2(p.X, p.GroundTop + PickupSize * 0.5f), new Vector2(PickupSize, PickupSize), new Color(1f, 0.9f, 0.3f), sprite);
+            vis.sortingOrder = 1;
+            var box = vis.gameObject.AddComponent<BoxCollider2D>();
+            box.size = Vector2.one;
+            box.isTrigger = true;
+            vis.gameObject.AddComponent<Pickup>().Configure(p.Id);
         }
 
         static RespawnMarker BuildStart(Transform parent, RoomSpec spec, Sprite sprite)
