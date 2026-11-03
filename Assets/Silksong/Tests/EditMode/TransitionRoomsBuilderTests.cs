@@ -309,6 +309,22 @@ namespace Hollowknight.Silksong.Tests
             }
         }
 
+        [Test]
+        public void OnlyTheBenchMarker_HasABenchWithATrigger()
+        {
+            foreach (var name in TransitionRoomsBuilder.RoomNames)
+            {
+                var scene = Preview(name);
+                var benches = All<Bench>(scene);
+                var start = All<RoomWorldStarter>(scene)[0].StartPoint;
+                if (name != "Tut_01") { Assert.AreEqual(0, benches.Count, name); continue; }
+                Assert.AreEqual(1, benches.Count);
+                Assert.AreSame(start.gameObject, benches[0].gameObject, "the bench sits on the bench marker");
+                Assert.IsTrue(benches[0].GetComponent<Collider2D>().isTrigger);
+                Assert.IsTrue(benches[0].GetComponent<RespawnMarker>().SetsBenchRespawn);
+            }
+        }
+
         // ---------- what a room must not hold ----------
 
         [Test]

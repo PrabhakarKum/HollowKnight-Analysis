@@ -41,7 +41,7 @@ namespace Hollowknight.Silksong
         public ScreenFader Fader { get; private set; }
         public AdditiveRoomLoader Loader { get; private set; }
         public RoomTransitionSettings Settings => settings;
-        // In-memory only. Saving to disk after a room change is a stub (see RecordRoom).
+        // Written to the selected slot after a room change (see Autosave); nothing is written without a slot.
         // The hero's HeroHealth uses this same object (task 8), so hazard and bench respawn data is one record.
         public PlayerData PlayerData
         {
@@ -127,8 +127,6 @@ namespace Hollowknight.Silksong
             // Death: the hero's death delay calls the controller, which respawns in place or through the manager.
             Manager.RespawnPlacer = (scene, markerName) => DeathRespawnController.PlaceAtMarker(hero.Health, scene, markerName);
             deathRespawn = new DeathRespawnController(hero.Health, Manager, () => Loader.CurrentRoom);
-
-            Stubs.NotImplemented("RoomWorldBootstrap: saving PlayerData to disk after a room change");
 
             // Out of the room scene so unloading rooms never takes the world with it.
             MakePersistent(gameObject);
@@ -304,6 +302,7 @@ namespace Hollowknight.Silksong
             if (success)
             {
                 RecordRoom(live);
+                Autosave();
                 return;
             }
             // Failed after the swap (new room without gates): the old room is gone, so the camera must follow the room
@@ -316,7 +315,18 @@ namespace Hollowknight.Silksong
             }
         }
 
-        // Remembers which room the player is in. In memory only.
+        // Times an autosave after a room change wrote a file (tests count it; stays 0 with no selected slot).
+        public int AutosaveCount { get; private set; }
+
+        // Save after a completed room change, never while dead. SaveSlots.Autosave does nothing without a selected
+        // slot. The original saves at death, bench and quit-to-menu; saving on a room change is this port's addition.
+        void Autosave()
+        {
+            if (hero != null && hero.Health != null && hero.Health.IsDead) return;
+            if (SaveSlots.Autosave(PlayerData)) AutosaveCount++;
+        }
+
+        // Remembers which room the player is in, in PlayerData (Autosave writes it to disk).
         // respawnScene is NOT touched: as in the original it only changes at benches / respawn markers (Task 8).
         // currentScene is the plain "where am I" record; mapZone gets the stable key, never the display name.
         void RecordRoom(Scene scene)

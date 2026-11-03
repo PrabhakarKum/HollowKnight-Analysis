@@ -509,6 +509,12 @@ namespace Hollowknight.Silksong.Editor
                 // A bench-like seat beside the strip: where the hero comes back after dying in any room.
                 var seat = Visual(go.transform, "BenchSeat", new Vector2(spec.StartX + 1.6f, 0.3f), new Vector2(2f, 0.6f), new Color(0.55f, 0.35f, 0.2f), sprite);
                 seat.sortingOrder = 1;
+                // The resting spot: a trigger around the strip and seat. Standing in it and pressing up rests (Bench).
+                var area = go.AddComponent<BoxCollider2D>();
+                area.isTrigger = true;
+                area.offset = new Vector2(1f, 0.5f);
+                area.size = new Vector2(4f, 2.5f);
+                go.AddComponent<Bench>();
             }
             return marker;
         }
