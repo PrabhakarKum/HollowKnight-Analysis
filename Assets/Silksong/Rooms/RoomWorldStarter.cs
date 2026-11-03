@@ -63,6 +63,7 @@ namespace Hollowknight.Silksong
             Stubs.NotImplemented("RoomWorldStarter: start menu and save slots (a room scene starts the world directly)");
             var world = CreateWorld();
             AddHeroArt(world.Hero);
+            world.Hero.gameObject.AddComponent<HeroInterpolation>();
 
             Vector2 spot;
             if (startPoint != null) spot = startPoint.transform.position;
