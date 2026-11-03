@@ -93,7 +93,16 @@ namespace Hollowknight.Silksong
         // one (the original's NO_DAMAGE mode). Not a timer, so it is kept apart from the hurt invulnerability.
         internal bool TransitionInvulnerable { get; set; }
 
-        public bool CanTakeDamage => !dead && invulnerableRemaining <= 0f && !stunActive && !TransitionInvulnerable;
+        // Additive (Milestone 4 task 5). The downspike grace: for a few steps after a downward hit that bounced, enemy
+        // contact must not hurt the hero (the original's DOWNSPIKE_INVULNERABILITY_STEPS). It is NOT part of
+        // CanTakeDamage: only enemy contact (EnemyContactDamage) consults it, so spikes and other hazards still hurt.
+        // The counter ticks down at the start of each controller step.
+        int contactGraceSteps;
+        public bool IsInContactGrace => contactGraceSteps > 0;
+        public int ContactGraceStepsRemaining => contactGraceSteps;
+        public void BeginContactGrace(int steps) => contactGraceSteps = Mathf.Max(contactGraceSteps, steps);
+
+        public bool CanTakeDamage =>!dead && invulnerableRemaining <= 0f && !stunActive && !TransitionInvulnerable;
 
         public event Action Damaged;
         public event Action Died;
@@ -205,6 +214,7 @@ namespace Hollowknight.Silksong
         // (stunned or dead), so the controller must not run HeroMovement.
         internal bool FixedStep(float dt)
         {
+            if (contactGraceSteps > 0) contactGraceSteps--;
             if (invulnerableRemaining > 0f)
             {
                 invulnerableRemaining -= dt;
@@ -297,6 +307,7 @@ namespace Hollowknight.Silksong
         void OnDisable()
         {
             dead = false;
+            contactGraceSteps = 0;
             invulnerableRemaining = 0f;
             stunRemaining = 0f;
             stunActive = false;
