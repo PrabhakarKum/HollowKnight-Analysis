@@ -114,7 +114,9 @@ namespace Hollowknight.Silksong.Tests
             world = null;
             yield return null;
             // Leave nothing behind: an empty active scene, every room and the host scene unloaded, no stray world objects.
-            var empty = SceneManager.CreateScene("M3AcceptanceEmpty");
+            // Reuse the empty scene a previous test left behind: CreateScene throws if the name is already taken.
+            var empty = SceneManager.GetSceneByName("M3AcceptanceEmpty");
+            if (!empty.IsValid() || !empty.isLoaded) empty = SceneManager.CreateScene("M3AcceptanceEmpty");
             SceneManager.SetActiveScene(empty);
             for (int i = SceneManager.sceneCount - 1; i >= 0; i--)
             {
