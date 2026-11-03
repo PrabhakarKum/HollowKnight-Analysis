@@ -96,19 +96,19 @@ Say "keep prototype" for a DIFFERENT row to put the prototype value into `HeroCo
 | 13 | Press during a dash | waits for the dash to end | not allowed (except downward dash) | refused | DIFFERENT |
 | 14 | Damage per hit | 1 (`nailDamage`) | grows with needle upgrades (not read) | 1 (`AttackDamage`) | DIFFERENT, **PROVISIONAL** |
 | 15 | Damage hand-over | hit target gets the direction only | hit instance with damage, direction, source; target decides | `HitInstance`, `IHittable.TakeHit` returns whether it landed | DIFFERENT |
-| 16 | Which targets bounce the hero | `pogo` flag on the target | enemy layer without an active non-bouncer, or terrain tagged "Recoiler" | any landed hit on an `IHittable` without an active `NonBouncer` | DIFFERENT |
+| 16 | Which targets bounce the hero | `pogo` flag on the target | enemy layer without an active non-bouncer, or terrain tagged "Recoiler" | a landed down hit on an `IHittable` without an active `NonBouncer`; a target that carries `IHitFeedbackTarget` may also say `Bounces = false` (Milestone 4, 14e) | DIFFERENT |
 | 17 | Pogo off tagged terrain (spikes) | a target with the flag | yes (`Recoiler` tag) | not built; no tag system yet, so no stub | DIFFERENT, deferred |
 | 18 | Pogo motion | a short jump, starts 3 steps in, cannot be cut short | default crest: downspike rebound jump (4 steps in, jump speed 18.6); other crests: `Bounce()` | the `Bounce()` model: 12 u/s for 0.25 s | DIFFERENT, **PROVISIONAL** |
 | 19 | `PogoBounceSpeed` 12 and its time | n/a | 12 (`BOUNCE_VELOCITY`) for 0.25 s (`BOUNCE_TIME`), confirmed as the `Bounce()` numbers | 12 from `HeroConfig`, 0.25 s as a named constant (no config field) | same, whether it is the default crest's pogo is **PROVISIONAL** |
 | 20 | End of the bounce | rise ends by itself | vertical speed set to 0 | vertical speed set to 0 | same (prototype differs) |
 | 21 | Bounce cancelled by | landing, ceiling | landing, ceiling, wall slide, dashes | landing, head bump, dash, cling, wall jump, hurt, dead | same |
-| 22 | Pogo gives back | air jump and air dash | air dash and double jump | air dash (cooldown untouched); double jump stub `Hero bounce refreshes double jump` | same, double jump deferred |
+| 22 | Pogo gives back | air jump and air dash | air dash and double jump | air dash (cooldown untouched); double jump stub `Hero bounce refreshes double jump` (the hero has no double jump yet) | same, double jump deferred |
 | 23 | Swing ends on pogo | yes | no, the swing runs on | no (the hit set stays, so no second hit) | DIFFERENT |
 | 24 | Down swing is a thrust (downspike) | none | default crest: 0.1 s antic, speed 26 for 0.1 s, 0.25 s recovery | not built, slash only, stub `Hero downspike thrust` | DIFFERENT, deferred |
-| 25 | Sideways recoil on hit | 5 steps at 8 u/s | 8 steps (0.16 s) at 3.75 u/s | not built, stub `Hero nail horizontal recoil` | DIFFERENT, deferred |
-| 26 | Upward hit stops rising | none | vertical speed capped to 0 | not built, stub `Hero nail up recoil` | DIFFERENT, deferred |
+| 25 | Sideways recoil on hit | 5 steps at 8 u/s | 8 steps (0.16 s) at 3.75 u/s | built (Milestone 4 task 5, `docs/study/14e-hit-feel.md`): 3.75 u/s for 8 steps, away from the swing, only on targets with `IHitFeedbackTarget` | same |
+| 26 | Upward hit stops rising | none | vertical speed capped to 0 | built (14e): a rise faster than 0 is cut to 0, only on targets with `IHitFeedbackTarget` | same |
 | 27 | Hit-stop and camera shake | a short freeze and shake on the first hit | optional per attack | none (owner setting: hero hit-stop off) | DIFFERENT, by owner decision |
-| 28 | Silk gained per hit | yes | yes | not built (no silk), stub `Hero silk gain on hit` | DIFFERENT, deferred |
+| 28 | Silk gained per hit | yes | yes | built (14e): +1 per landed damaging hit on a target that gives silk, capped at `PlayerData.maxSilk` | same |
 | 29 | Wall: sideways swing | halves slide speed (cap 5) for the swing length | halves it once (cap -5), slashes away from the wall | halves it once (cap 5); movement and the wall cap then bring it back to full slide speed | DIFFERENT |
 | 30 | Wall: up swing | pushes off 0.8 and cancels the slide | pushes off 0.8 and cancels the slide | same | same |
 | 31 | Wall: down swing | cancels the slide | cancels the slide | cancels, and no new cling until the swing ends | DIFFERENT, **PROVISIONAL** (re-latch rule not read) |
@@ -137,8 +137,9 @@ Time base: every new-hero timer is seconds reduced by the step length, so 50 and
 ### Not built here (stubs and follow-ups)
 
 Each logs once through `Stubs.NotImplemented`: `Hero attack buffer` (row 12, also a press during a dash),
-`Hero alternate slash` (row 11), `Hero downspike thrust` (row 24), `Hero nail horizontal recoil` (row 25),
-`Hero nail up recoil` (row 26), `Hero silk gain on hit` (row 28), `Hero bounce refreshes double jump` (row 22).
+`Hero alternate slash` (row 11), `Hero downspike thrust` (row 24),
+`Hero bounce refreshes double jump` (row 22).
+Rows 25, 26 and 28 are built in Milestone 4 task 5 and their stubs are gone (see `docs/study/14e-hit-feel.md`).
 Unbuilt without a stub because nothing exists to hang them on: multi-hit attacks (row 10), pogo off tagged terrain
 (row 17), crest and tool variants (row 34), hard-landing cancel (row 33).
 

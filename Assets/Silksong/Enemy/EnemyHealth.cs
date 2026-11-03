@@ -9,8 +9,12 @@ namespace Hollowknight.Silksong
     // Death: contact damage goes to zero first, then renderers and colliders are switched off, then Died is
     // raised once, then the object is disabled (or destroyed) after RemoveDelaySeconds (default 0).
     // Not built: hit and death sound/effects, corpse, drops (silk gain is HeroAttack's job).
-    public class EnemyHealth : MonoBehaviour, IHittable
+    public class EnemyHealth : MonoBehaviour, IHittable, IHitFeedbackTarget
     {
+        // Hero feedback on a landed hit (study 14e): an ordinary enemy gives silk and bounces a downward hit.
+        public bool GivesSilk => true;
+        public bool Bounces => true;
+
         [SerializeField] SilksongEnemyConfig config;
         [SerializeField] float removeDelaySeconds;
         [SerializeField] bool destroyOnDeath;

@@ -539,13 +539,14 @@ namespace Hollowknight.Silksong.Tests
         }
 
         [Test]
-        public void Attack_SidewaysHit_LogsRecoilStubAndDoesNotMoveHero()
+        public void Attack_SidewaysHit_OnTargetWithoutFeedbackHook_DoesNotMoveHero()
         {
+            // The recoil is built (HeroHitFeelTests); a plain dummy has no IHitFeedbackTarget, so it gets none.
             BuildWorld(0f);
             Settle();
             MakeDummy(new Vector2(1.0f, 0.5f));
             Swing(Vector2.zero);
-            CollectionAssert.Contains(new List<string>(Stubs.Reported), "Hero nail horizontal recoil");
+            CollectionAssert.DoesNotContain(new List<string>(Stubs.Reported), "Hero nail horizontal recoil");
             Assert.AreEqual(0f, hero.Velocity.x, 0.01f);
         }
 

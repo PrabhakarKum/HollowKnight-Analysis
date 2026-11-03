@@ -8,7 +8,7 @@ namespace Hollowknight.Silksong
     // Collider2D on this object reports the hero through trigger (or, for a solid box, collision) events, and
     // Tick re-checks the known heroes every physics step because stay events stop for a sleeping body.
     // Damage is zeroed on death (EnemyHealth calls ZeroDamage).
-    // Not built: the hero's 2-step downspike grace (study section 3, HeroHealth territory).
+    // The hero's 2-step downspike grace is HeroHealth.IsInContactGrace, checked in Hit (hazards do not use this class).
     [RequireComponent(typeof(Collider2D))]
     public class EnemyContactDamage : MonoBehaviour
     {
@@ -101,6 +101,8 @@ namespace Hollowknight.Silksong
         {
             int dmg = DamageDealt;
             if (dmg <= 0 || hero.IsDead) return;
+            // The hero just landed a downspike hit: enemy contact is ignored for a couple of steps (study 14e).
+            if (hero.IsInContactGrace) return;
             hero.TakeHit(new HitInstance { Damage = dmg, Direction = AttackDirection.Normal, Source = gameObject });
         }
     }

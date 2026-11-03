@@ -51,6 +51,9 @@ namespace Hollowknight.Silksong.Tests
             { "AttackUpSize", new Vector2(1.4f, 0.8f) }, { "AttackUpOffset", new Vector2(0f, 1.15f) },
             { "AttackDownSize", new Vector2(1.4f, 0.5f) }, { "AttackDownOffset", new Vector2(0f, 0f) },
             { "AttackDamage", 1 },
+            // hit feel (study 14, hero feedback on hit)
+            { "SilkPerNailHit", 1 }, { "NailRecoilSpeed", 3.75f }, { "NailRecoilSteps", 8 },
+            { "UpRecoilMaxRiseSpeed", 0f }, { "DownspikeGraceSteps", 2 },
             // hurt
             { "HurtInvulnerableSeconds", 1f }, { "HurtKnockbackX", 15f }, { "HurtKnockbackY", 0f }, { "HurtStunSeconds", 0.2f },
             // room transitions (docs/study/10-room-transitions.md section 3; added with the hero transition driver)

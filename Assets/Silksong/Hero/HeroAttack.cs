@@ -50,7 +50,13 @@ namespace Hollowknight.Silksong
         float bounceElapsed;
         float velocityYAtStepStart;
 
+        // Sideways hit recoil (study 14e): forced horizontal speed for a number of steps after a landed slash.
+        int recoilStepsRemaining;
+        float recoilDirection;
+        bool swingRight;
+
         public bool IsAttacking => attacking;
+        public bool IsRecoiling => recoilStepsRemaining > 0;
         public AttackDirection CurrentDirection => currentDirection;
         public bool IsBouncing => bouncing;
         // The child trigger collider; enabled only while a swing is live.
@@ -117,6 +123,67 @@ namespace Hollowknight.Silksong
             if (endedByDamage) return;
             if (attacking) DetectHits();
             UpdateBounce(dt);
+            UpdateRecoil();
+        }
+
+        // While recoiling, the push speed is forced every step (movement just set the run speed). Anything that takes
+        // over the hero's motion ends it without touching the velocity.
+        void UpdateRecoil()
+        {
+            if (recoilStepsRemaining <= 0) return;
+            if (owner.Dash.IsDashing || owner.Wall.IsClinging || owner.Wall.IsWallJumpLocked
+                || owner.State == HeroState.Hurt || owner.State == HeroState.Dead || owner.ControlLocked)
+            {
+                recoilStepsRemaining = 0;
+                return;
+            }
+            Vector2 vel = owner.Body.linearVelocity;
+            vel.x = recoilDirection * owner.Config.NailRecoilSpeed;
+            owner.Body.linearVelocity = vel;
+            recoilStepsRemaining--;
+        }
+
+        // Feedback of one landed hit (study 14e): silk, then the recoil or bounce for the swing's direction.
+        void ApplyHitFeedback(IHittable target, Collider2D c)
+        {
+            var cfg = owner.Config;
+            var feedback = target as IHitFeedbackTarget;
+            var nonBouncer = c.GetComponentInParent<NonBouncer>();
+            bool nonBouncerActive = nonBouncer != null && nonBouncer.Active;
+
+            if (feedback != null && HeroHitFeelRules.GivesSilk(cfg.AttackDamage, feedback.GivesSilk))
+            {
+                var data = owner.Health.Data;
+                data.silk = HeroHitFeelRules.AddSilk(data.silk, cfg.SilkPerNailHit, data.maxSilk);
+            }
+
+            if (currentDirection == AttackDirection.Down)
+            {
+                // A target without the feedback hook keeps the old rule (any hittable without an active NonBouncer).
+                if (HeroHitFeelRules.BounceAllowed(feedback != null, feedback != null && feedback.Bounces, nonBouncerActive))
+                {
+                    StartBounce();
+                    // The hero ignores enemy contact for a couple of steps (hazards still hurt).
+                    owner.Health.BeginContactGrace(cfg.DownspikeGraceSteps);
+                }
+            }
+            else if (feedback == null) return;   // walls, dummies: no recoil
+            else if (currentDirection == AttackDirection.Up)
+            {
+                if (owner.Dash.IsDashing || owner.Wall.IsClinging) return;
+                Vector2 vel = owner.Body.linearVelocity;
+                vel.y = HeroHitFeelRules.CapRiseSpeed(vel.y, cfg.UpRecoilMaxRiseSpeed);
+                owner.Body.linearVelocity = vel;
+            }
+            else
+            {
+                if (!HeroHitFeelRules.CanRecoilSideways(recoilStepsRemaining > 0, owner.Dash.IsDashing, owner.Wall.IsClinging,
+                        owner.Wall.IsWallJumpLocked, owner.State == HeroState.Hurt || owner.State == HeroState.Dead, owner.ControlLocked)
+                    || cfg.NailRecoilSteps <= 0) return;
+                recoilDirection = HeroHitFeelRules.RecoilDirection(swingRight);
+                // Applied by UpdateRecoil later in this same EndStep, so the hit step is step 1 of the push.
+                recoilStepsRemaining = cfg.NailRecoilSteps;
+            }
         }
 
         void StartSwing()
@@ -168,6 +235,7 @@ namespace Hollowknight.Silksong
             }
 
             currentDirection = dir;
+            swingRight = sideRight;
             PlaceHitbox(cfg, dir, sideRight);
             hitThisSwing.Clear();
             attacking = true;
@@ -228,16 +296,7 @@ namespace Hollowknight.Silksong
                 });
                 if (!landed) continue;
                 HitLanded?.Invoke(target, currentDirection);
-                Stubs.NotImplemented("Hero silk gain on hit");
-
-                var nonBouncer = c.GetComponentInParent<NonBouncer>();
-                bool bounceAllowed = nonBouncer == null || !nonBouncer.Active;
-                if (currentDirection == AttackDirection.Down)
-                {
-                    if (bounceAllowed) StartBounce();
-                }
-                else if (currentDirection == AttackDirection.Up) Stubs.NotImplemented("Hero nail up recoil");
-                else Stubs.NotImplemented("Hero nail horizontal recoil");
+                ApplyHitFeedback(target, c);
             }
         }
 
@@ -289,6 +348,7 @@ namespace Hollowknight.Silksong
             EndSwing();
             bouncing = false;
             bounceElapsed = 0f;
+            recoilStepsRemaining = 0;
         }
 
         // Respawn: no swing, bounce or cooldown left, so the next press swings immediately.
@@ -304,6 +364,7 @@ namespace Hollowknight.Silksong
             cooldownRemaining = 0f;
             bouncing = false;
             bounceElapsed = 0f;
+            recoilStepsRemaining = 0;
             endedByDamage = false;
         }
     }

@@ -65,6 +65,19 @@ namespace Hollowknight.Silksong
         // PROVISIONAL: the original's damage grows with needle upgrades; 1 is the prototype's nailDamage.
         public int AttackDamage = 1;
 
+        // Hit feel on the hero (Milestone 4 task 5, docs/study/14e-hit-feel.md). Additive: values are the original's.
+        // Silk gained per damaging nail hit on a target that gives silk (HeroController.SilkGain).
+        public int SilkPerNailHit = 1;
+        // Sideways hit: push away from the target at this speed (RECOIL_HOR_VELOCITY) ...
+        public float NailRecoilSpeed = 3.75f;
+        // ... for this many physics steps (RECOIL_HOR_STEPS; 8 steps = 0.16 s at 50 Hz, counted in steps like the original).
+        public int NailRecoilSteps = 8;
+        // Upward hit: a rise faster than this is cut to it (RECOIL_DOWN_VELOCITY).
+        public float UpRecoilMaxRiseSpeed = 0f;
+        // After a downward hit that bounces, enemy contact is ignored for this many steps (DOWNSPIKE_INVULNERABILITY_STEPS;
+        // the original's long downspike uses 10 and is not built).
+        public int DownspikeGraceSteps = 2;
+
         [Header("Hurt (unused until the damage task)")]
         public float HurtInvulnerableSeconds = 1f;
         // PROVISIONAL: RECOIL_VELOCITY is a guess for the damage recoil speed; not confirmed.
