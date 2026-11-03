@@ -20,6 +20,39 @@ namespace Hollowknight.Silksong
 
         enum FileState { Missing, Valid, Corrupt, Newer, Unreadable }
 
+        public enum SlotFileState { Missing, Valid, Corrupt, Newer, Unreadable }
+
+        // Read-only look at a slot: never moves, renames or writes anything (unlike LoadOrDefault,
+        // which quarantines a corrupt file). Slot menus use this.
+        public static SlotFileState Peek(int slot, out PlayerData data)
+        {
+            return (SlotFileState)(int)Inspect(PathFor(slot), out data);
+        }
+
+        // Explicit player-requested delete. A good save is deleted; a corrupt or newer-version file is
+        // moved aside (kept as *.corrupt / *.newer) rather than destroyed. Unreadable files are left alone.
+        // Returns true when the slot is empty afterwards.
+        public static bool DeleteSlot(int slot)
+        {
+            string path = PathFor(slot);
+            PlayerData ignored;
+            try
+            {
+                switch (Inspect(path, out ignored))
+                {
+                    case FileState.Missing: return true;
+                    case FileState.Valid: File.Delete(path); return !File.Exists(path);
+                    case FileState.Corrupt: Quarantine(path); return !File.Exists(path);
+                    case FileState.Newer: Quarantine(path, ".newer"); return !File.Exists(path);
+                    default: return false;
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[Save] Could not delete slot {slot}: {e.Message}");
+                return false;
+            }
+        }
         static string PathFor(int slot) => Path.Combine(Root, "user" + slot + ".json");
 
         public static bool TrySave(PlayerData data, int slot)
@@ -122,13 +155,13 @@ namespace Hollowknight.Silksong
         }
 
         // Keeps the unreadable bytes for recovery under a unique name; never deletes an earlier backup.
-        static void Quarantine(string path)
+        static void Quarantine(string path, string ext = ".corrupt")
         {
             try
             {
-                string target = path + ".corrupt";
+                string target = path + ext;
                 for (int n = 1; File.Exists(target); n++)
-                    target = path + "." + n + ".corrupt";
+                    target = path + "." + n + ext;
                 File.Move(path, target);
                 Debug.LogWarning($"[Save] Corrupt save moved to {target}");
             }
