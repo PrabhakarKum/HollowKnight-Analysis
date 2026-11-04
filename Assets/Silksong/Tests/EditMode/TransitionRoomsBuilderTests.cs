@@ -532,8 +532,36 @@ namespace Hollowknight.Silksong.Tests
 
             var start = All<RoomWorldStarter>(scene)[0].StartPoint;
             Assert.IsFalse(start.transform.position.x > stretch.xMin - 3f && start.transform.position.x < stretch.xMax + 3f, "the Start marker is within 3 units of the stretch");
+            // The step beside the stretch is clear of the Start marker and the hazard triggers too (checked above for triggers).
+            var step = Solids(scene).Single(s => Mathf.Abs(s.xMax - spec.StretchMinX) < 0.001f && Mathf.Abs(s.yMax - 1f) < 0.001f);
+            Assert.GreaterOrEqual(step.xMin - start.transform.position.x, 2f, "the step starts well right of the Start marker");
             Assert.AreEqual(0, All<Bench>(scene).Count, "no bench in Tut_01b");
             Assert.AreEqual(0, All<BreakableWall>(scene).Count + All<Pickup>(scene).Count, "no wall or pickup in Tut_01b");
+        }
+
+        // The hero's side swing is centred on its root (1.55 above the feet) and is 1.2 high, so it covers 1.1..2.3 above
+        // the feet. An enemy on the hero's own floor is touched by a sliver; from the 1-high MossStep the whole enemy is
+        // inside the swing. This pins the reason the step exists.
+        [Test]
+        public void MossStep_PutsTheEnemyInsideTheHeroSideSwing()
+        {
+            var scene = Preview("Tut_01b");
+            var creep = All<MossCreep>(scene).Single();
+            var spec = TransitionRoomsBuilder.GetSpec("Tut_01b").Enemies.Single();
+            var enemy = EnemyRect(creep);
+            var cfg = TransitionRoomsBuilder.LoadAssets().Config;
+            float rootAboveFeet = SilksongUnits.HeroColliderSize.y * 0.5f - SilksongUnits.HeroColliderOffset.y;
+
+            var step = Solids(scene).Single(s => Mathf.Abs(s.xMax - spec.StretchMinX) < 0.001f && Mathf.Abs(s.yMax - 1f) < 0.001f);
+            float heroX = step.xMax - 0.35f;   // body half width 0.25 plus a gap to the wall
+            float root = step.yMax + rootAboveFeet;
+            float nailBottom = root + cfg.AttackSideOffset.y - cfg.AttackSideSize.y * 0.5f;
+            float nailTop = root + cfg.AttackSideOffset.y + cfg.AttackSideSize.y * 0.5f;
+            float overlapY = Mathf.Min(nailTop, enemy.yMax) - Mathf.Max(nailBottom, enemy.yMin);
+            Assert.Greater(overlapY, enemy.height * 0.8f, "from the step the swing covers most of the enemy's height");
+
+            float nailRight = heroX + cfg.AttackSideOffset.x + cfg.AttackSideSize.x * 0.5f;
+            Assert.Greater(nailRight, spec.StretchMinX + 0.8f, "the swing reaches the enemy when it is at the near end of its stretch");
         }
 
         [Test]

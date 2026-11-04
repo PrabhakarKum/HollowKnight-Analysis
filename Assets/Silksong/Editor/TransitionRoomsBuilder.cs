@@ -366,6 +366,12 @@ namespace Hollowknight.Silksong.Editor
             // turns it round, so it stays on the Bump. That stretch is clear of every gate (the nearest, left2, is 40 units
             // away), the hazard triggers (29.5..32.5 and 47..49), the spikes (28..29.5 and 50..52) and the Start marker
             // (x 34). The hero jumps up onto the Bump to meet it. No existing coordinate is changed.
+            // MossStep (new, additive): a step 1 high against the Bump's left wall, where the hero can stand 1 below the
+            // enemy's floor. The hero's side swing only covers 1.1..2.3 above its feet (HeroConfig AttackSideOffset/Size
+            // are centred on the hero's root, which is 1.55 above the feet), so an enemy standing on the SAME floor as the
+            // hero is touched by 0.03 units only. From the step the swing covers the whole 1.11-high enemy. See
+            // docs/study/14f-placing-the-enemy.md.
+            r.Blocks.Add(new BlockSpec("MossStep", 37f, 40f, 1f, 0f));
             r.Enemies.Add(new EnemySpec(Tut01bMossCreepId, 43f, 2f, 40f, 46f, true));
             return r;
         }
