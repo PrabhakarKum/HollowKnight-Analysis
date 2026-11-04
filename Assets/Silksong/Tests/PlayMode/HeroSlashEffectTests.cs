@@ -201,11 +201,11 @@ namespace Hollowknight.Silksong.Tests
         {
             BuildHero(true);
             Swing(Vector2.left);
-            var withEffect = hero.Attack.Hitbox.size;
+            var withEffect = ((BoxCollider2D)hero.Attack.Hitbox).size;
             Object.DestroyImmediate(hero.gameObject);
             BuildHero(false);
             Swing(Vector2.left);
-            Assert.AreEqual(withEffect, hero.Attack.Hitbox.size);
+            Assert.AreEqual(withEffect, ((BoxCollider2D)hero.Attack.Hitbox).size);
         }
 
         [Test]
