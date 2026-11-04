@@ -12,6 +12,11 @@ namespace Hollowknight.Silksong
         // Frame events on the first frame fire (see PlayFromFrame).
         void Play(string clip);
 
+        // Same as Play(clip) but the clip runs at a multiple of its own speed (1 = natural). Speed stays
+        // for the whole clip, including a loop continuation; any later plain Play resets it to 1.
+        // Default body ignores the speed, so animators that cannot change speed need no change.
+        void Play(string clip, float speed) => Play(clip);
+
         // Always restarts the clip at the given zero-based frame. Frame events placed on that
         // start frame DO fire; events on earlier frames do not.
         void PlayFromFrame(string clip, int frame);

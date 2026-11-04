@@ -314,6 +314,98 @@ namespace Hollowknight.Silksong.Tests
         }
 
         [Test]
+        public void PlayWithSpeed_AppliesSpeed()
+        {
+            anim.Register(MakeClip("Once", loop: false));
+            anim.Play("Once", 2f);
+            Assert.AreEqual(2f, anim.CurrentSpeed);
+            Assert.IsTrue(anim.IsPlaying("Once"));
+        }
+
+        [Test]
+        public void PlainPlay_UsesSpeedOne()
+        {
+            anim.Register(MakeClip("Once", loop: false));
+            anim.Play("Once");
+            Assert.AreEqual(1f, anim.CurrentSpeed);
+        }
+
+        [Test]
+        public void PlainPlay_ResetsSpeedFromEarlierFastPlay()
+        {
+            anim.Register(MakeClip("Once", loop: false));
+            anim.Register(MakeClip("Loop", loop: true));
+            anim.Play("Once", 3f);
+            anim.Play("Loop");
+            Assert.AreEqual(1f, anim.CurrentSpeed);
+
+            anim.Play("Loop", 2f);   // same looping clip: no restart, speed adopted
+            Assert.AreEqual(2f, anim.CurrentSpeed);
+            anim.Play("Loop");
+            Assert.AreEqual(1f, anim.CurrentSpeed);
+        }
+
+        [Test]
+        public void PlayFromFrame_ResetsSpeedToOne()
+        {
+            anim.Register(MakeClip("Once", loop: false));
+            anim.Play("Once", 2f);
+            anim.PlayFromFrame("Once", 1);
+            Assert.AreEqual(1f, anim.CurrentSpeed);
+        }
+
+        [Test]
+        public void InvalidSpeed_FallsBackToOne()
+        {
+            anim.Register(MakeClip("Once", loop: false));
+            anim.Play("Once", 0f);
+            Assert.AreEqual(1f, anim.CurrentSpeed);
+            anim.Play("Once", -2f);
+            Assert.AreEqual(1f, anim.CurrentSpeed);
+        }
+
+        [UnityTest]
+        public IEnumerator DoubleSpeed_FinishesClipInHalfTheTime()
+        {
+            anim.Register(MakeClip("Once", loop: false));   // 0.4 s at speed 1
+            int completed = 0;
+            anim.Completed += _ => completed++;
+
+            anim.Play("Once", 4f);                           // 0.1 s
+            yield return WaitSeconds(0.5f);
+
+            // At speed 1 this much time would be near the end; the point is it already finished once.
+            Assert.AreEqual(1, completed);
+        }
+
+        [UnityTest]
+        public IEnumerator SpeedOne_StillRunsWholeClip()
+        {
+            anim.Register(MakeClip("Once", loop: false));
+            int completed = 0;
+            anim.Completed += _ => completed++;
+
+            anim.Play("Once");
+            yield return WaitSeconds(0.1f);
+
+            Assert.AreEqual(0, completed, "0.4 s clip must not be done after 0.1 s at natural speed");
+            yield return WaitSeconds(0.8f);
+            Assert.AreEqual(1, completed);
+        }
+
+        [UnityTest]
+        public IEnumerator LoopContinuation_KeepsSpeed()
+        {
+            anim.Register(MakeClip("Jump", loop: false));
+            anim.Register(MakeClip("Jump Loop", loop: true));
+            anim.Play("Jump", 4f);                           // intro lasts 0.1 s
+            yield return WaitSeconds(0.6f);
+
+            Assert.IsTrue(anim.IsPlaying("Jump Loop"), "intro should have chained into the loop part");
+            Assert.AreEqual(4f, anim.CurrentSpeed);
+        }
+
+        [Test]
         public void Disable_ResetsPlaybackState()
         {
             anim.Register(MakeClip("L", loop: true));

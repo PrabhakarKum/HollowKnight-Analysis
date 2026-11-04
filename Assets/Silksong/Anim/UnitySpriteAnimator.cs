@@ -34,6 +34,7 @@ namespace Hollowknight.Silksong
         AnimationClip current;
         bool currentLoops;
         bool finished;
+        float currentSpeed = AnimatorSpeedRules.DefaultSpeed;
         // True only inside the seek Evaluate(0); anything Unity dispatches then is covered by our hand-fired events.
         bool seeking;
 
@@ -68,23 +69,42 @@ namespace Hollowknight.Silksong
             loopByName[clip.name] = clip.isLooping;
         }
 
-        public void Play(string clip)
+        public void Play(string clip) => Play(clip, AnimatorSpeedRules.DefaultSpeed);
+
+        // Speed is a multiple of the clip's own rate. The no-restart cases below still adopt the requested
+        // speed, so a plain Play(name) always brings a running clip back to speed 1.
+        public void Play(string clip, float speed)
         {
             EnsureInit();
+            speed = AnimatorSpeedRules.Sanitise(speed);
             if (current != null && !finished)
             {
-                if (current.name == clip && currentLoops) return;
                 // A clip with a registered "<name> Loop" continuation (a tk2d LoopSection clip) is one animation in
                 // two parts: repeating Play(name) while either part is current must not restart it.
-                if (HasLoopPart(clip) && (current.name == clip || current.name == clip + LoopSuffix)) return;
+                bool keepRunning = (current.name == clip && currentLoops) ||
+                    (HasLoopPart(clip) && (current.name == clip || current.name == clip + LoopSuffix));
+                if (keepRunning)
+                {
+                    SetSpeed(speed);
+                    return;
+                }
             }
-            StartClip(clip, 0);
+            StartClip(clip, 0, speed);
+        }
+
+        // Speed of the clip now playing (1 when nothing is).
+        public float CurrentSpeed => currentSpeed;
+
+        void SetSpeed(float speed)
+        {
+            currentSpeed = speed;
+            if (playable.IsValid()) playable.SetSpeed(speed);
         }
 
         public void PlayFromFrame(string clip, int frame)
         {
             EnsureInit();
-            StartClip(clip, frame);
+            StartClip(clip, frame, AnimatorSpeedRules.DefaultSpeed);
         }
 
         // Playing "Jump" counts while its "Jump Loop" continuation runs.
@@ -96,7 +116,7 @@ namespace Hollowknight.Silksong
 
         bool HasLoopPart(string name) => clipsByName.ContainsKey(name + LoopSuffix);
 
-        void StartClip(string clipName, int frame)
+        void StartClip(string clipName, int frame, float speed)
         {
             if (!clipsByName.TryGetValue(clipName, out var clip))
             {
@@ -120,6 +140,7 @@ namespace Hollowknight.Silksong
             if (playable.IsValid()) playable.Destroy();
             playable = AnimationClipPlayable.Create(graph, clip);
             output.SetSourcePlayable(playable);
+            SetSpeed(speed);
 
             current = clip;
             currentLoops = loopByName[clipName];
@@ -155,7 +176,7 @@ namespace Hollowknight.Silksong
                 // End of an intro: continue straight into its loop part. Completed is NOT raised for the intro;
                 // it is raised only when a non-looping clip ends with no continuation.
                 string next = current.name + LoopSuffix;
-                if (clipsByName.ContainsKey(next)) { StartClip(next, 0); return; }
+                if (clipsByName.ContainsKey(next)) { StartClip(next, 0, currentSpeed); return; }
                 finished = true;
                 Completed?.Invoke(current.name);
             }
@@ -177,6 +198,7 @@ namespace Hollowknight.Silksong
         {
             current = null;
             finished = false;
+            currentSpeed = AnimatorSpeedRules.DefaultSpeed;
             manualFired.Clear();
         }
 
