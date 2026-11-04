@@ -54,6 +54,16 @@ namespace Hollowknight.Silksong.Tests
         }
 
         [Test]
+        public void VisibleSeconds_DownIsTheThrustWindow_OthersTheWholeClip()
+        {
+            Assert.AreEqual(0.10f, HeroSlashEffectRules.DownVisibleSeconds);
+            Assert.AreEqual(0.10f, HeroSlashEffectRules.VisibleSeconds(AttackDirection.Down, 0.15f), 1e-6f);
+            Assert.AreEqual(0.05f, HeroSlashEffectRules.VisibleSeconds(AttackDirection.Down, 0.05f), 1e-6f);
+            Assert.AreEqual(0.20f, HeroSlashEffectRules.VisibleSeconds(AttackDirection.Normal, 0.20f), 1e-6f);
+            Assert.AreEqual(0.25f, HeroSlashEffectRules.VisibleSeconds(AttackDirection.Up, 0.25f), 1e-6f);
+        }
+
+        [Test]
         public void FlipX_OnlyWhenGoingRight()
         {
             Assert.IsTrue(HeroSlashEffectRules.FlipX(true));

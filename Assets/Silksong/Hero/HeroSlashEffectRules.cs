@@ -22,6 +22,13 @@ namespace Hollowknight.Silksong
         public const float DownOffsetX = 0.69f;
         public const float DownOffsetY = -0.37f;
 
+        // The downspike swipe is drawn only for the thrust (0.10 s); its clip is 0.15 s long. Side and up swipes
+        // last their whole clip. Visual only: the hitbox timer is untouched.
+        public const float DownVisibleSeconds = 0.10f;
+
+        public static float VisibleSeconds(AttackDirection dir, float clipLength)
+            => dir == AttackDirection.Down ? Mathf.Min(clipLength, DownVisibleSeconds) : clipLength;
+
         public static string ClipFor(AttackDirection dir)
         {
             switch (dir)

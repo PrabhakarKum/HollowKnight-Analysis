@@ -250,7 +250,13 @@ namespace Hollowknight.Silksong
             // The cooldown is never shorter than the swing itself (the original clamps it the same way).
             cooldownRemaining = Mathf.Max(cfg.AttackCooldownSeconds, cfg.AttackActiveSeconds);
             // The default crest answers a down press with a thrusting "downspike" instead of a slash (not built).
-            if (dir == AttackDirection.Down) Stubs.NotImplemented("Hero downspike thrust");
+            if (dir == AttackDirection.Down)
+            {
+                Stubs.NotImplemented("Hero downspike thrust");
+                Stubs.NotImplemented("Hero downspike antic/thrust/recovery choreography");
+                Stubs.NotImplemented("Hero downspike burst effect");
+                Stubs.NotImplemented("Hero downspike hero box shrink");
+            }
             bool onWall = clinging && dir == AttackDirection.Normal;
             bool alternate = false;
             // A wall slash leaves the toggle alone (it only counts as a swing for the timer and direction).

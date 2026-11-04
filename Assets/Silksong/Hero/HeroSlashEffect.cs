@@ -9,6 +9,7 @@ namespace Hollowknight.Silksong
     {
         UnitySpriteAnimator animator;
         SpriteRenderer sprite;
+        float hideAfter = -1f;   // seconds left of a shortened swipe; negative = the clip decides
 
         public bool IsShown => sprite != null && sprite.enabled;
         public string CurrentClip { get; private set; }
@@ -66,6 +67,9 @@ namespace Hollowknight.Silksong
             sprite.flipX = HeroSlashEffectRules.FlipX(goesRight);
             CurrentClip = clip;
             animator.Play(clip);   // a non-looping clip always restarts from frame 0
+            hideAfter = -1f;
+            if (dir == AttackDirection.Down && animator.TryGetClip(clip, out var clipAsset))
+                hideAfter = HeroSlashEffectRules.VisibleSeconds(dir, clipAsset.length);
             sprite.enabled = true;
         }
 
@@ -73,6 +77,14 @@ namespace Hollowknight.Silksong
         {
             if (sprite != null) sprite.enabled = false;
             CurrentClip = null;
+            hideAfter = -1f;
+        }
+
+        void Update()
+        {
+            if (hideAfter < 0f || !IsShown) return;
+            hideAfter -= Time.deltaTime;
+            if (hideAfter <= 0f) Hide();
         }
 
         void OnClipCompleted(string clip)

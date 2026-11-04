@@ -184,6 +184,54 @@ namespace Hollowknight.Silksong.Tests
             Assert.IsFalse(EffectRenderer().enabled, "hidden after the clip length");
         }
 
+        [UnityTest]
+        public IEnumerator DownSwipe_IsShownOnlyForTheThrustWindow()
+        {
+            BuildHero(true);
+            Swing(Vector2.down);
+            Assert.AreEqual(AttackDirection.Down, hero.Attack.CurrentDirection);
+            Assert.IsTrue(EffectRenderer().enabled);
+            float t = 0f;
+            while (t < 0.04f) { t += Time.deltaTime; yield return null; }
+            Assert.IsTrue(EffectRenderer().enabled, "still shown inside the thrust window");
+            // Bounded wait for it to hide; the clip alone would keep it to 0.15 s.
+            float waited = 0f;
+            while (waited < 0.5f && EffectRenderer().enabled) { waited += Time.deltaTime; yield return null; }
+            Assert.IsFalse(EffectRenderer().enabled, "hidden after the thrust window");
+            Assert.Less(t + waited, 0.14f, "hidden near 0.10 s, before the 0.15 s clip end");
+            Assert.IsTrue(hero.Attack.IsAttacking, "the swing itself is still on");
+        }
+
+        [Test]
+        public void DownSwipe_IsHiddenEarlyOnBounce()
+        {
+            BuildHero(true);
+            Swing(Vector2.down);
+            Assert.IsTrue(EffectRenderer().enabled);
+            typeof(HeroAttack).GetMethod("StartBounce", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+                .Invoke(hero.Attack, null);
+            Assert.IsFalse(EffectRenderer().enabled);
+        }
+
+        [Test]
+        public void DownSwing_BodyClipStaysSlashDown_AndHitboxAndTimersAreUnchanged()
+        {
+            BuildHero(true);
+            Swing(Vector2.down);
+            for (int i = 0; i < 5; i++)
+            {
+                hero.StepFixed(Dt);
+                Physics2D.Simulate(Dt);
+                input.EndFixedStep(Dt);
+                Assert.IsTrue(hero.Animator.IsPlaying("SlashDown"), "body clip not overwritten at step " + i);
+            }
+            var box = (BoxCollider2D)hero.Attack.Hitbox;
+            Assert.AreEqual(config.AttackDownSize, box.size);
+            Assert.AreEqual(config.AttackDownOffset, box.offset);
+            Assert.IsTrue(hero.Attack.IsAttacking);
+            Assert.AreEqual(Mathf.Max(config.AttackCooldownSeconds, config.AttackActiveSeconds) - 5 * Dt, hero.Attack.CooldownRemaining, 1e-3f);
+        }
+
         [Test]
         public void Swipe_IsHiddenWhenTheSwingIsCutShort()
         {
