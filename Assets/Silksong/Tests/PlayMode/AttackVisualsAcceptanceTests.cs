@@ -227,14 +227,14 @@ namespace Hollowknight.Silksong.Tests
         }
 
         // The swipe is drawn for the thrust window only; its own Update hides it, so this needs real frames.
-        // Bounded: at most 120 frames, always yielding.
+        // Bounded by elapsed time (0.5 s) with a large frame cap, always yielding (batch-mode frames can be very short).
         [UnityTest]
         public IEnumerator DownSwipe_IsHiddenAfterAboutATenthOfASecond_WhileTheSwingStaysOn()
         {
             Swing(Vector2.down);
             Assert.IsTrue(Effect().IsShown);
             float waited = 0f;
-            for (int frame = 0; frame < 120 && Effect().IsShown; frame++)
+            for (int frame = 0; frame < 20000 && waited < 0.5f && Effect().IsShown; frame++)
             {
                 waited += Time.deltaTime;
                 yield return null;
