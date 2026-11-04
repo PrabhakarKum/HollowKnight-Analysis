@@ -140,3 +140,8 @@ InitTestScene*.unity*
 # Milestone 2 task 7: generated grey-box transition rooms (Tut_01, Tut_01b, Tut_02), built locally with Silksong > Build Transition Rooms
 /Assets/Scenes/Rooms/
 /Assets/Scenes/Rooms.meta
+
+# Milestone 4 task 6: the Moss Creep config is generated (Silksong > Build Transition Rooms or Build Moss Creep Config), like the rooms.
+# Kept apart from the old prototype's Assets/ScriptableObjects/Enemies.
+/Assets/ScriptableObjects/SilksongEnemies/
+/Assets/ScriptableObjects/SilksongEnemies.meta

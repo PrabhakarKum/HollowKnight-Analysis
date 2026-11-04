@@ -79,8 +79,22 @@ namespace Hollowknight.Silksong.Editor
         public PickupSpec(string id, float x, float groundTop) { Id = id; X = x; GroundTop = groundTop; }
     }
 
+    // A Moss Creep standing on a floor: X is the centre of the walking stretch, FloorTop the surface it walks on,
+    // StretchMinX/MaxX the floor's ends (a ledge or wall stops it there). Id is the explicit EnemyPersistence id.
+    public sealed class EnemySpec
+    {
+        public readonly string Id;
+        public readonly float X, FloorTop, StretchMinX, StretchMaxX;
+        public readonly bool FacingRight;
+        public EnemySpec(string id, float x, float floorTop, float stretchMinX, float stretchMaxX, bool facingRight)
+        {
+            Id = id; X = x; FloorTop = floorTop; StretchMinX = stretchMinX; StretchMaxX = stretchMaxX; FacingRight = facingRight;
+        }
+    }
+
     public sealed class RoomSpec
     {
+        public readonly List<EnemySpec> Enemies = new List<EnemySpec>();
         public readonly List<BreakableWallSpec> BreakableWalls = new List<BreakableWallSpec>();
         public readonly List<PickupSpec> Pickups = new List<PickupSpec>();
         // True: the Start marker is the bench (the death respawn). Only the start room, Tut_01.
@@ -107,6 +121,8 @@ namespace Hollowknight.Silksong.Editor
         public Sprite HeroSprite;
         public AnimationClip[] HeroClips;
         public Font LabelFont;
+        // The Moss Creep config (created on demand, see MossCreepConfigAsset).
+        public SilksongEnemyConfig MossCreepConfig;
     }
 
     // Builds the three grey-box rooms of Milestone 2 (Tut_01, Tut_01b, Tut_02) with Silksong's gate names and links
@@ -136,6 +152,9 @@ namespace Hollowknight.Silksong.Editor
         public const string Tut01WallId = "Tut_01_BreakableWall_1";
         public const string Tut01PickupId = "Tut_01_Pickup_1";
         public const float PickupSize = 1f;
+
+        // The explicit save id of the Tut_01b Moss Creep (scene name + id is the save key; never rename it).
+        public const string Tut01bMossCreepId = "Tut_01b_MossCreep_1";
 
         const string MissingAssetMessage = "Required asset missing or not imported: ";
 
@@ -224,6 +243,7 @@ namespace Hollowknight.Silksong.Editor
                 Actions = Require<InputActionAsset>(HeroTestSceneBuilder.InputActionsPath),
                 WhiteSprite = Require<Sprite>(HeroTestSceneBuilder.SpritePath),
                 LabelFont = ResolveLabelFont(),
+                MossCreepConfig = MossCreepConfigAsset.EnsureAsset(),
             };
             assets.HeroSprite = assets.WhiteSprite;
             assets.HeroClips = new AnimationClip[0];
@@ -342,6 +362,11 @@ namespace Hollowknight.Silksong.Editor
             r.HazardSpots.Add(new HazardSpotSpec("HazardRight", 47f, 49f, 48f, 0f, true));
             r.Spikes.Add(new SpikeSpec(50f, 52f, 0f));
             r.Notes.Add(new KeyValuePair<string, Vector2>("right1 -> Weave_04: not built (wall)", new Vector2(48f, 4f)));
+            // The first enemy (Milestone 4 task 6). It walks on top of the Bump (x 40..46, top 2): a ledge at both ends
+            // turns it round, so it stays on the Bump. That stretch is clear of every gate (the nearest, left2, is 40 units
+            // away), the hazard triggers (29.5..32.5 and 47..49), the spikes (28..29.5 and 50..52) and the Start marker
+            // (x 34). The hero jumps up onto the Bump to meet it. No existing coordinate is changed.
+            r.Enemies.Add(new EnemySpec(Tut01bMossCreepId, 43f, 2f, 40f, 46f, true));
             return r;
         }
 
@@ -409,6 +434,13 @@ namespace Hollowknight.Silksong.Editor
             var memory = Child(root.transform, "Memory");
             foreach (var w in spec.BreakableWalls) BuildBreakableWall(memory, w, spec.Tint, assets.WhiteSprite);
             foreach (var p in spec.Pickups) BuildPickup(memory, p, assets.WhiteSprite);
+
+            if (spec.Enemies.Count > 0)
+            {
+                if (assets.MossCreepConfig == null) throw new System.InvalidOperationException("Moss Creep config missing: run Silksong/Build Moss Creep Config");
+                var enemies = Child(root.transform, "Enemies");
+                foreach (var e in spec.Enemies) BuildEnemy(enemies, e, assets.MossCreepConfig);
+            }
 
             var bounds = RoomBounds.Create(new Rect(0f, 0f, spec.Width, spec.Height));
             bounds.transform.SetParent(root.transform, false);
@@ -490,6 +522,16 @@ namespace Hollowknight.Silksong.Editor
             box.size = Vector2.one;
             box.isTrigger = true;
             vis.gameObject.AddComponent<Pickup>().Configure(p.Id);
+        }
+
+        // Only the MossCreep component goes into the room (config, save id, facing); it builds the rest when the room
+        // loads (it cannot run in the Editor). The object is named after the id so the hierarchy shows it.
+        static void BuildEnemy(Transform parent, EnemySpec e, SilksongEnemyConfig config)
+        {
+            var go = new GameObject(e.Id);
+            go.transform.SetParent(parent, false);
+            go.transform.position = new Vector3(e.X, MossCreep.RootYOnFloor(config, e.FloorTop), 0f);
+            go.AddComponent<MossCreep>().Configure(config, e.Id, e.FacingRight);
         }
 
         static RespawnMarker BuildStart(Transform parent, RoomSpec spec, Sprite sprite)

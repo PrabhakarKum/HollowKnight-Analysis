@@ -455,6 +455,117 @@ namespace Hollowknight.Silksong.Tests
             }
         }
 
+        // ---------- the Moss Creep (Milestone 4 task 6) ----------
+
+        const string MossCreepId = "Tut_01b_MossCreep_1";
+
+        [Test]
+        public void MossCreep_ExistsInTut01bOnly_WithTheExplicitId()
+        {
+            var rooms = AllRooms();
+            Assert.AreEqual(0, All<MossCreep>(rooms["Tut_01"]).Count, "Tut_01 has no enemy");
+            Assert.AreEqual(0, All<MossCreep>(rooms["Tut_02"]).Count, "Tut_02 has no enemy");
+            var creeps = All<MossCreep>(rooms["Tut_01b"]);
+            Assert.AreEqual(1, creeps.Count, "exactly one Moss Creep in Tut_01b");
+            Assert.AreEqual(MossCreepId, creeps[0].PlacementId);
+            Assert.AreEqual(MossCreepId, TransitionRoomsBuilder.Tut01bMossCreepId);
+            Assert.IsNotNull(creeps[0].Config, "the config asset is wired in");
+            Assert.AreEqual(SilksongEnemyConfigDefaults.MaxHealth, creeps[0].Config.maxHealth);
+
+            // Ids are unique across the whole set (PersistentBool keys are scene + id, but unique ids are safer).
+            var ids = rooms.Values.SelectMany(s => All<MossCreep>(s)).Select(c => c.PlacementId).ToList();
+            Assert.AreEqual(ids.Count, ids.Distinct().Count());
+            foreach (var spec in TransitionRoomsBuilder.RoomNames.Select(TransitionRoomsBuilder.GetSpec))
+                Assert.AreEqual(spec.Name == "Tut_01b" ? 1 : 0, spec.Enemies.Count, spec.Name);
+        }
+
+        // The enemy's footprint comes from the config exactly as MossCreep.Create / the builder place it.
+        static Rect EnemyRect(MossCreep creep)
+        {
+            var c = creep.Config;
+            Vector2 centre = (Vector2)creep.transform.position + c.colliderOffset;
+            return new Rect(centre - c.colliderSize * 0.5f, c.colliderSize);
+        }
+
+        [Test]
+        public void MossCreep_StandsOnSolidGround_WithALedgeAtBothEnds_AndNothingInsideIt()
+        {
+            var scene = Preview("Tut_01b");
+            var creep = All<MossCreep>(scene).Single();
+            var spec = TransitionRoomsBuilder.GetSpec("Tut_01b").Enemies.Single();
+            var solids = Solids(scene);
+            var rect = EnemyRect(creep);
+
+            var ground = solids.Where(s => Mathf.Abs(s.yMax - spec.FloorTop) < 0.001f && s.xMin <= spec.X && s.xMax >= spec.X).ToList();
+            Assert.AreEqual(1, ground.Count, "one solid box carries the enemy");
+            Assert.AreEqual(spec.StretchMinX, ground[0].xMin, 0.001f, "the stretch starts where the ground starts");
+            Assert.AreEqual(spec.StretchMaxX, ground[0].xMax, 0.001f, "the stretch ends where the ground ends");
+            Assert.AreEqual(spec.FloorTop + MossCreep.SpawnClearance, rect.yMin, 0.001f, "feet a hair above the ground");
+            Assert.GreaterOrEqual(rect.xMin, ground[0].xMin);
+            Assert.LessOrEqual(rect.xMax, ground[0].xMax);
+            Assert.Greater(ground[0].width - rect.width, 2f, "room to walk before turning");
+
+            var inner = new Rect(rect.x + 0.01f, rect.y + 0.03f, rect.width - 0.02f, rect.height - 0.04f);
+            Assert.IsFalse(solids.Any(s => s.Overlaps(inner)), "no solid box inside the enemy");
+
+            // A ledge at both ends: nothing solid just beyond either end within the ledge ray's reach below the feet.
+            foreach (float x in new[] { spec.StretchMinX - 0.1f, spec.StretchMaxX + 0.1f })
+                Assert.IsFalse(solids.Any(s => s.Contains(new Vector2(x, spec.FloorTop - 0.55f))), "ground continues past x=" + x + ": no ledge to turn at");
+            // Head room: nothing solid above the stretch for the height of the hero.
+            var above = new Rect(ground[0].xMin, spec.FloorTop, ground[0].width, 3f);
+            Assert.IsFalse(solids.Any(s => s.Overlaps(above)), "a roof over the stretch");
+        }
+
+        [Test]
+        public void MossCreep_IsFarFromGates_Hazards_Spikes_AndTheStartMarker()
+        {
+            var scene = Preview("Tut_01b");
+            var spec = TransitionRoomsBuilder.GetSpec("Tut_01b").Enemies.Single();
+            var stretch = new Rect(spec.StretchMinX, spec.FloorTop, spec.StretchMaxX - spec.StretchMinX, 2f);
+
+            foreach (var gate in All<TransitionPoint>(scene))
+                Assert.GreaterOrEqual(Mathf.Abs(gate.transform.position.x - spec.X), 6f + (spec.StretchMaxX - spec.StretchMinX) * 0.5f, gate.name + " is too close to the enemy's stretch");
+
+            // Every trigger box of the room (gates, hazard triggers, spikes, the bench area when there is one).
+            foreach (var box in All<BoxCollider2D>(scene).Where(b => b.isTrigger && b.GetComponentInParent<MossCreep>() == null))
+                Assert.IsFalse(WorldRect(box).Overlaps(stretch), box.name + " overlaps the enemy's walking stretch");
+
+            var start = All<RoomWorldStarter>(scene)[0].StartPoint;
+            Assert.IsFalse(start.transform.position.x > stretch.xMin - 3f && start.transform.position.x < stretch.xMax + 3f, "the Start marker is within 3 units of the stretch");
+            Assert.AreEqual(0, All<Bench>(scene).Count, "no bench in Tut_01b");
+            Assert.AreEqual(0, All<BreakableWall>(scene).Count + All<Pickup>(scene).Count, "no wall or pickup in Tut_01b");
+        }
+
+        [Test]
+        public void MossCreepConfigAsset_IsCreatedOnDemand_WithTheStudyNumbers_AndNeverOverwritten()
+        {
+            string path = TempFolder + "/SilksongEnemies/MossCreep.asset";
+            var created = MossCreepConfigAsset.EnsureAsset(path);
+            Assert.IsNotNull(created);
+            Assert.IsTrue(File.Exists(path));
+            Assert.AreEqual(SilksongEnemyConfigDefaults.MaxHealth, created.maxHealth);
+            Assert.AreEqual(SilksongEnemyConfigDefaults.ContactDamage, created.contactDamage);
+            Assert.AreEqual(SilksongEnemyConfigDefaults.WalkSpeed, created.walkSpeed);
+            Assert.AreEqual(SilksongEnemyConfigDefaults.StaysDead, created.staysDead);
+
+            created.maxHealth = 7;
+            EditorUtility.SetDirty(created);
+            AssetDatabase.SaveAssets();
+            var again = MossCreepConfigAsset.EnsureAsset(path);
+            Assert.AreEqual(7, again.maxHealth, "an existing asset is left alone");
+        }
+
+        [Test]
+        public void MossCreepConfigAsset_RealPath_IsNotTheOwnersEnemyFolder_AndIsGitIgnored()
+        {
+            StringAssert.StartsWith("Assets/ScriptableObjects/SilksongEnemies/", MossCreepConfigAsset.Path);
+            StringAssert.DoesNotContain("ScriptableObjects/Enemies/", MossCreepConfigAsset.Path);
+            string ignore = File.ReadAllText(Path.Combine(Application.dataPath, "..", ".gitignore"));
+            StringAssert.Contains("/Assets/ScriptableObjects/SilksongEnemies/", ignore);
+            StringAssert.Contains("/Assets/ScriptableObjects/SilksongEnemies.meta", ignore);
+            Assert.IsNotNull(TransitionRoomsBuilder.LoadAssets().MossCreepConfig, "loading the room assets creates the config when it is missing");
+        }
+
         [Test]
         public void GitIgnore_ListsTheGeneratedRoomsFolder()
         {

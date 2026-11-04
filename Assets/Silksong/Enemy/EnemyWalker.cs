@@ -127,6 +127,9 @@ namespace Hollowknight.Silksong
                 var c = hits[i].collider;
                 if (c == null || c == bodyCollider) continue;
                 if (c.attachedRigidbody == body) continue;
+                // The hero and other enemies are never ground or walls. A room puts them on the same layer as its
+                // terrain, so the layer mask cannot tell them apart (Milestone 4 task 6 fix).
+                if (c.GetComponentInParent<HeroHealth>() != null || c.GetComponentInParent<EnemyHealth>() != null) continue;
                 return true;
             }
             return false;
