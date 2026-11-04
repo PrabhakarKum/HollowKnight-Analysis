@@ -34,14 +34,13 @@ namespace Hollowknight.Silksong.Editor
             new Entry { HeroName = "Land",      SourceClip = "Land",       PlayedByHero = false },
             new Entry { HeroName = "WallSlide", SourceClip = "Wall Slide", PlayedByHero = true },
             new Entry { HeroName = "WallJump",  SourceClip = "Walljump",   PlayedByHero = false },
-            new Entry { HeroName = "SlashAlt",  SourceClip = "SlashAlt",   PlayedByHero = false },
-            // Nail swipe effects (study 15 section 6). The first three are played by HeroSlashEffect; the alternate
-            // effect and the wall body clip wait for the alternate-swing / wall task.
+            new Entry { HeroName = "SlashAlt",  SourceClip = "SlashAlt",   PlayedByHero = true },
+            // Nail swipe effects (study 15 section 6). All are played now (alternate swing and wall slash).
             new Entry { HeroName = "SlashEffect",     SourceClip = "SlashEffect",     PlayedByHero = true },
-            new Entry { HeroName = "SlashAltEffect",  SourceClip = "SlashEffectAlt",  PlayedByHero = false },
+            new Entry { HeroName = "SlashAltEffect",  SourceClip = "SlashEffectAlt",  PlayedByHero = true },
             new Entry { HeroName = "SlashUpEffect",   SourceClip = "UpSlashEffect",   PlayedByHero = true },
             new Entry { HeroName = "SlashDownEffect", SourceClip = "DownSlashEffect", PlayedByHero = true },
-            new Entry { HeroName = "WallSlash",       SourceClip = "Wall Slash",      PlayedByHero = false },
+            new Entry { HeroName = "WallSlash",       SourceClip = "Wall Slash",      PlayedByHero = true },
         };
 
         // Rows whose source clip is not in the library (or whose hero name is not listed at all). Empty = good.

@@ -513,12 +513,13 @@ namespace Hollowknight.Silksong.Tests
                 var row = HeroAnimationMap.Entries.Single(e => e.HeroName == rows[i, 0]);
                 Assert.AreEqual(rows[i, 1], row.SourceClip, rows[i, 0]);
             }
-            // The body clip SlashAlt stays as it was (the alternate-swing task plays it, not this one).
-            Assert.IsFalse(HeroAnimationMap.Entries.Single(e => e.HeroName == "SlashAlt").PlayedByHero);
+            // The alternate swing and the wall slash are played by hero code now.
+            Assert.IsTrue(HeroAnimationMap.Entries.Single(e => e.HeroName == "SlashAlt").PlayedByHero);
+            Assert.IsTrue(HeroAnimationMap.Entries.Single(e => e.HeroName == "SlashAltEffect").PlayedByHero);
             Assert.IsTrue(HeroAnimationMap.Entries.Single(e => e.HeroName == "SlashEffect").PlayedByHero);
             Assert.IsTrue(HeroAnimationMap.Entries.Single(e => e.HeroName == "SlashUpEffect").PlayedByHero);
             Assert.IsTrue(HeroAnimationMap.Entries.Single(e => e.HeroName == "SlashDownEffect").PlayedByHero);
-            Assert.IsFalse(HeroAnimationMap.Entries.Single(e => e.HeroName == "WallSlash").PlayedByHero);
+            Assert.IsTrue(HeroAnimationMap.Entries.Single(e => e.HeroName == "WallSlash").PlayedByHero);
         }
 
         [Test]

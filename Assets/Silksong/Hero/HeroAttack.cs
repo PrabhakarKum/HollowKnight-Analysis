@@ -44,6 +44,11 @@ namespace Hollowknight.Silksong
         float activeRemaining;
         float cooldownRemaining;
         AttackDirection currentDirection;
+        // Alternate sideways swing (HeroAltSwingRules). The clock is the sum of the step lengths.
+        float swingClock;
+        float lastSwingStart = -1000f;
+        AttackDirection previousDirection = AttackDirection.Normal;
+        bool altFlag;
         bool clingCancelled;
         bool endedByDamage;
 
@@ -87,6 +92,7 @@ namespace Hollowknight.Silksong
         internal void BeginStep(float dt, bool dashActive)
         {
             var input = owner.Input;
+            swingClock += dt;
             velocityYAtStepStart = owner.Body.linearVelocity.y;
 
             if (cooldownRemaining > 0f) cooldownRemaining -= dt;
@@ -243,21 +249,55 @@ namespace Hollowknight.Silksong
             activeRemaining = cfg.AttackActiveSeconds;
             // The cooldown is never shorter than the swing itself (the original clamps it the same way).
             cooldownRemaining = Mathf.Max(cfg.AttackCooldownSeconds, cfg.AttackActiveSeconds);
-            // Both exist in the original and are not built: the second (alternate) swing is art plus a reset timer,
-            // and the default crest answers a down press with a thrusting "downspike" instead of a slash.
-            Stubs.NotImplemented("Hero alternate slash");
+            // The default crest answers a down press with a thrusting "downspike" instead of a slash (not built).
             if (dir == AttackDirection.Down) Stubs.NotImplemented("Hero downspike thrust");
-            owner.Animator?.Play(dir == AttackDirection.Up ? "SlashUp" : dir == AttackDirection.Down ? "SlashDown" : "Slash");
-            ShowSlashEffect(dir, sideRight);
+            bool onWall = clinging && dir == AttackDirection.Normal;
+            bool alternate = false;
+            // A wall slash leaves the toggle alone (it only counts as a swing for the timer and direction).
+            if (!onWall)
+            {
+                altFlag = HeroAltSwingRules.FlagAfterReset(altFlag, swingClock - lastSwingStart, dir != previousDirection);
+                if (dir == AttackDirection.Normal)
+                {
+                    alternate = altFlag;
+                    altFlag = HeroAltSwingRules.FlagAfterSideSwing(alternate);
+                }
+            }
+            if (dir != AttackDirection.Down) lastSwingStart = swingClock;   // the downspike does not restart the timer
+            previousDirection = dir;
+            PlayBodyClip(dir, onWall, alternate);
+            ShowSlashEffect(dir, sideRight, onWall, alternate);
             Attacked?.Invoke(dir);
         }
 
+        void PlayBodyClip(AttackDirection dir, bool onWall, bool alternate)
+        {
+            var anim = owner.Animator;
+            if (anim == null) return;
+            string clip = dir == AttackDirection.Up ? "SlashUp"
+                : dir == AttackDirection.Down ? "SlashDown"
+                : onWall ? HeroAltSwingRules.WallBodyClip
+                : HeroAltSwingRules.BodyClip(alternate);
+            // A hero whose animator lacks the newer clips keeps the plain swing clip.
+            var real = anim as UnitySpriteAnimator;
+            if (real != null && !real.TryGetClip(clip, out _)) clip = HeroAltSwingRules.FirstBodyClip;
+            anim.Play(clip);
+        }
+
+        // True while a swing is on and the animator still shows one of the swing clips. Movement and wall code must
+        // not replace the clip then (a swing is an overlay; neither sets a state for it).
+        internal bool IsShowingSwingClip(ISpriteAnimator anim)
+        {
+            if (!attacking || anim == null) return false;
+            return anim.IsPlaying("Slash") || anim.IsPlaying("SlashAlt") || anim.IsPlaying("SlashUp")
+                || anim.IsPlaying("SlashDown") || anim.IsPlaying(HeroAltSwingRules.WallBodyClip);
+        }
+
         // The nail swipe is drawn by its own child (visual only). Built on the first swing, once the hero's art exists.
-        // Side swings use the first swipe for now; the alternate and the wall offset come with the alternate-swing task.
-        void ShowSlashEffect(AttackDirection dir, bool goesRight)
+        void ShowSlashEffect(AttackDirection dir, bool goesRight, bool onWall, bool alternate)
         {
             if (slashEffect == null) slashEffect = HeroSlashEffect.TryCreate(transform, owner.Animator);
-            if (slashEffect != null) slashEffect.Show(dir, goesRight, false);
+            if (slashEffect != null) slashEffect.Show(dir, goesRight, onWall, alternate);
         }
 
         void PlaceHitbox(HeroConfig cfg, AttackDirection dir, bool sideRight)

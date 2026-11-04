@@ -10,6 +10,7 @@ namespace Hollowknight.Silksong
     {
         // Imported clip names (see HeroAnimationMap).
         public const string SideClip = "SlashEffect";
+        public const string AltClip = "SlashAltEffect";
         public const string UpClip = "SlashUpEffect";
         public const string DownClip = "SlashDownEffect";
 
@@ -30,6 +31,9 @@ namespace Hollowknight.Silksong
                 default: return SideClip;
             }
         }
+
+        public static string ClipFor(AttackDirection dir, bool alternate)
+            => dir == AttackDirection.Normal && alternate ? AltClip : ClipFor(dir);
 
         // goesRight: the swing side for a sideways swing, the hero's facing for up and down.
         // onWall: the sideways swing of a wall cling (offset 0.61 toward the swing side).

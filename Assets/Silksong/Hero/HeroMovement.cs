@@ -224,8 +224,7 @@ namespace Hollowknight.Silksong
             if (anim == null) { turnPending = turning = false; return; }
             // A swing is an overlay on movement (HeroAttack sets no HeroState): do not replace its clip with
             // Idle/Run/Fall on the step it started, or it would never show.
-            if (owner.Attack != null && owner.Attack.IsAttacking
-                && (anim.IsPlaying("Slash") || anim.IsPlaying("SlashUp") || anim.IsPlaying("SlashDown")))
+            if (owner.Attack != null && owner.Attack.IsShowingSwingClip(anim))
             {
                 landPending = landing = turnPending = turning = false;
                 return;

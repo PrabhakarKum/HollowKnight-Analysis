@@ -192,6 +192,8 @@ namespace Hollowknight.Silksong
         {
             var animator = owner.Animator;
             if (animator == null) return;
+            // A wall swing (WallSlash) keeps its clip until it ends; the cling clip returns after.
+            if (owner.Attack != null && owner.Attack.IsShowingSwingClip(animator)) return;
             if (slideClip) slideClip = velocityY < -SlideStopSpeed;
             else slideClip = velocityY < -SlideStartSpeed;
             string clip = slideClip ? SlideClipName : ClingClipName;

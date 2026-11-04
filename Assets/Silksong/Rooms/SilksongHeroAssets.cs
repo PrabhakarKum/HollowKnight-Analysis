@@ -38,13 +38,13 @@ namespace Hollowknight.Silksong
         public static readonly string[] PlayedByHeroCode =
         {
             "Idle", "Run", "Jump", "Fall", "Dash", "WallCling", "WallSlide", "Slash", "SlashUp", "SlashDown", "Hurt", "Death", "Turn",
-            "SlashEffect", "SlashUpEffect", "SlashDownEffect"
+            "SlashEffect", "SlashUpEffect", "SlashDownEffect", "SlashAlt", "SlashAltEffect", "WallSlash"
         };
 
-        // In the plan's list but not yet played by hero code (landing, wall jump, alternate swing).
+        // In the plan's list but not yet played by hero code (landing, wall jump).
         public static readonly string[] ImportedForLater =
         {
-            "Land", "WallJump", "SlashAlt", "SlashAltEffect", "WallSlash"
+            "Land", "WallJump"
         };
     }
 }

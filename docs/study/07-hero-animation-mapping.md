@@ -27,7 +27,7 @@ It reads the library from `D:\Asset HollowKnight Bundles\ExportedProject\Assets\
 | Turn | yes (grounded facing reversal) | `Turn` | 6 | 18 | Once | once | one on frame 1 (no name), `Footstep` on frame 5 |
 | WallSlide | yes (clinging and moving down) | `Wall Slide` | 9 | 12 | LoopSection, loop from frame 6 | once + `WallSlide Loop` | none |
 | WallJump | no (later) | `Walljump` | 14 | 15 | Once | once | none |
-| SlashAlt | no (later) | `SlashAlt` | 5 | 20 | Once | once | none |
+| SlashAlt | yes (second sideways swing) | `SlashAlt` | 5 | 20 | Once | once | none |
 
 ## Needed clips with no clip of that name
 
@@ -38,8 +38,8 @@ Every clip the plan lists exists in the library under a different name. None is 
 - **SlashDown** has no clip of that name. The default crest's downward attack plays `DownSpike`. A separate `DownSlash` and `DownSlashAlt` exist in the original for other crests and are not in this library as hero clips (`DownSlashEffect` is the slash effect sprite, not the hero body).
 - **WallCling** and **WallJump** are `Wall Cling` and `Walljump`.
 - **Death** is `Death`; `Death Final`, `Acid Death` and `Spike Death` are variants not used yet.
-- The original has a second swing for each direction (`SlashAlt`, `UpSlashAlt`, `DownSlashAlt`). Only `SlashAlt` is imported (for later); the up and down alternates are not in this library under those names.
-- `Wall Slash` is the attack clip while clinging. It is not imported yet (the current wall code plays `Slash`).
+- The original has a second swing for each direction (`SlashAlt`, `UpSlashAlt`, `DownSlashAlt`). Only `SlashAlt` is imported, and it is played now (alternate sideways swing, toggle and 0.65 s reset in `HeroAltSwingRules`); the up and down alternates are not in this library under those names.
+- `Wall Slash` (hero name `WallSlash`) is the attack clip while clinging and swinging sideways; `HeroAttack` plays it and `HeroWall` leaves the clip alone while the swing runs.
 
 ## Differences and things to know (PROVISIONAL where marked)
 
@@ -89,6 +89,6 @@ Code: `Hero/HeroTurnRules.cs` (the pure decision, unit tested), `Hero/HeroMoveme
 
 In the original, the base wall state is "wall sliding" and it plays `Wall Slide` for as long as the hero is on the wall. `Wall Cling` is a separate state that only exists when the Wall Cling tool is equipped and the stick pushes into the wall; it is the still hold. Both clips are LoopSection clips and the original replays them from frame 2 only when it was already in that state (so they continue instead of restarting).
 
-This project's `HeroWall` "cling" is the original's base wall slide (fall speed capped at `WallSlideSpeed`), and it used to play `WallCling` for the whole contact, which looked static (the loop of `Wall Cling` barely moves). Now `HeroWall` plays `WallSlide` while the hero moves down the wall (faster than 0.5 units/s, back to the cling clip under 0.1 units/s) and `WallCling` when the hero hangs without moving down, such as the first step of a cling. A clip that is already playing is not played again. `WallSlide` is now `PlayedByHero = true`. The importer already turns `Wall Slide` into `WallSlide` plus `WallSlide Loop` (loop from frame 6), so no re-import is needed. The Wall Cling tool, the 0.15 s stick delay and `Wall Slash` remain unbuilt.
+This project's `HeroWall` "cling" is the original's base wall slide (fall speed capped at `WallSlideSpeed`), and it used to play `WallCling` for the whole contact, which looked static (the loop of `Wall Cling` barely moves). Now `HeroWall` plays `WallSlide` while the hero moves down the wall (faster than 0.5 units/s, back to the cling clip under 0.1 units/s) and `WallCling` when the hero hangs without moving down, such as the first step of a cling. A clip that is already playing is not played again. `WallSlide` is now `PlayedByHero = true`. The importer already turns `Wall Slide` into `WallSlide` plus `WallSlide Loop` (loop from frame 6), so no re-import is needed. The Wall Cling tool and the 0.15 s stick delay remain unbuilt.
 
 The frozen look had a second cause: `HeroMovement` runs before `HeroWall` in each step and played `Fall`, which `HeroWall` then replaced with the cling clip, so the clip restarted from its first frame every step. Movement now leaves the clip alone while the hero clings in the air.

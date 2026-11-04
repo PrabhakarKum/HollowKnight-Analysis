@@ -34,6 +34,9 @@ namespace Hollowknight.Silksong
                 }
             }
 
+            // The alternate swipe is optional: without it the first swipe is used for both swings.
+            body.TryGetClip(HeroSlashEffectRules.AltClip, out var altClip);
+
             var go = new GameObject("NailSwipeEffect");
             go.transform.SetParent(parent, false);
             var effect = go.AddComponent<HeroSlashEffect>();
@@ -41,6 +44,7 @@ namespace Hollowknight.Silksong
             go.AddComponent<Animator>();
             effect.animator = go.AddComponent<UnitySpriteAnimator>();
             foreach (var c in clips) effect.animator.Register(c);
+            effect.animator.Register(altClip);
 
             var bodyRenderer = body.GetComponent<SpriteRenderer>();
             if (bodyRenderer != null)
@@ -53,9 +57,10 @@ namespace Hollowknight.Silksong
             return effect;
         }
 
-        public void Show(AttackDirection dir, bool goesRight, bool onWall)
+        public void Show(AttackDirection dir, bool goesRight, bool onWall, bool alternate = false)
         {
-            string clip = HeroSlashEffectRules.ClipFor(dir);
+            string clip = HeroSlashEffectRules.ClipFor(dir, alternate);
+            if (clip != HeroSlashEffectRules.ClipFor(dir) && !animator.TryGetClip(clip, out _)) clip = HeroSlashEffectRules.ClipFor(dir);
             transform.localPosition = HeroSlashEffectRules.LocalPosition(dir, goesRight, onWall);
             transform.localScale = HeroSlashEffectRules.LocalScale(dir);
             sprite.flipX = HeroSlashEffectRules.FlipX(goesRight);
