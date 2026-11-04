@@ -61,7 +61,7 @@ namespace Hollowknight.Silksong.Tests
             for (int i = SceneManager.sceneCount - 1; i >= 0; i--)
             {
                 var s = SceneManager.GetSceneAt(i);
-                if (s == empty || !s.isLoaded) continue;
+                if (s == empty || !s.isLoaded || s.name.StartsWith("InitTestScene")) continue;   // the test runner's own scene: unloading it stalls the teardown
                 yield return SceneManager.UnloadSceneAsync(s);
             }
             foreach (var b in UnityEngine.Object.FindObjectsByType<RoomWorldBootstrap>(FindObjectsInactive.Include, FindObjectsSortMode.None))
