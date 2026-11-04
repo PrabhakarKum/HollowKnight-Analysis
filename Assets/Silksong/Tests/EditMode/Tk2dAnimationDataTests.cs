@@ -478,7 +478,8 @@ namespace Hollowknight.Silksong.Tests
         static readonly string[] KnightNames =
         {
             "Idle", "Run", "Airborne", "Fall", "Dash", "Wall Cling", "Slash", "UpSlash", "DownSpike", "Recoil",
-            "Death", "Turn", "Land", "Wall Slide", "Walljump", "SlashAlt"
+            "Death", "Turn", "Land", "Wall Slide", "Walljump", "SlashAlt",
+            "SlashEffect", "SlashEffectAlt", "UpSlashEffect", "DownSlashEffect", "Wall Slash"
         };
 
         [Test]
@@ -497,6 +498,35 @@ namespace Hollowknight.Silksong.Tests
             Assert.AreEqual(HeroClipNames.PlayedByHeroCode.Length + HeroClipNames.ImportedForLater.Length, mapped.Count);
             foreach (var e in HeroAnimationMap.Entries)
                 Assert.AreEqual(HeroClipNames.PlayedByHeroCode.Contains(e.HeroName), e.PlayedByHero, e.HeroName);
+        }
+
+        [Test]
+        public void HeroMap_HasTheNailSwipeEffectRows()
+        {
+            string[,] rows =
+            {
+                { "SlashEffect", "SlashEffect" }, { "SlashAltEffect", "SlashEffectAlt" },
+                { "SlashUpEffect", "UpSlashEffect" }, { "SlashDownEffect", "DownSlashEffect" }, { "WallSlash", "Wall Slash" }
+            };
+            for (int i = 0; i < rows.GetLength(0); i++)
+            {
+                var row = HeroAnimationMap.Entries.Single(e => e.HeroName == rows[i, 0]);
+                Assert.AreEqual(rows[i, 1], row.SourceClip, rows[i, 0]);
+            }
+            // The body clip SlashAlt stays as it was (the alternate-swing task plays it, not this one).
+            Assert.IsFalse(HeroAnimationMap.Entries.Single(e => e.HeroName == "SlashAlt").PlayedByHero);
+            Assert.IsTrue(HeroAnimationMap.Entries.Single(e => e.HeroName == "SlashEffect").PlayedByHero);
+            Assert.IsTrue(HeroAnimationMap.Entries.Single(e => e.HeroName == "SlashUpEffect").PlayedByHero);
+            Assert.IsTrue(HeroAnimationMap.Entries.Single(e => e.HeroName == "SlashDownEffect").PlayedByHero);
+            Assert.IsFalse(HeroAnimationMap.Entries.Single(e => e.HeroName == "WallSlash").PlayedByHero);
+        }
+
+        [Test]
+        public void HeroMap_FlagsAnEffectClipMissingFromTheLibrary()
+        {
+            var problems = HeroAnimationMap.FindProblems(KnightNames.Where(n => n != "UpSlashEffect"));
+            Assert.AreEqual(1, problems.Count);
+            StringAssert.Contains("SlashUpEffect", problems[0]);
         }
 
         [Test]

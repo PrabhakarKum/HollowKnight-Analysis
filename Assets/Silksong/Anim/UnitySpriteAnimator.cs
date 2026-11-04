@@ -69,6 +69,14 @@ namespace Hollowknight.Silksong
             loopByName[clip.name] = clip.isLooping;
         }
 
+        // A clip registered under this name (or listed in the serialized array), for code that builds a second
+        // animator from the same clips (the nail swipe effect).
+        public bool TryGetClip(string clipName, out AnimationClip clip)
+        {
+            EnsureInit();
+            return clipsByName.TryGetValue(clipName, out clip);
+        }
+
         public void Play(string clip) => Play(clip, AnimatorSpeedRules.DefaultSpeed);
 
         // Speed is a multiple of the clip's own rate. The no-restart cases below still adopt the requested

@@ -38,6 +38,7 @@ namespace Hollowknight.Silksong
         readonly Collider2D[] overlaps = new Collider2D[24];
         HeroController owner;
         BoxCollider2D hitbox;
+        HeroSlashEffect slashEffect;
 
         bool attacking;
         float activeRemaining;
@@ -247,7 +248,16 @@ namespace Hollowknight.Silksong
             Stubs.NotImplemented("Hero alternate slash");
             if (dir == AttackDirection.Down) Stubs.NotImplemented("Hero downspike thrust");
             owner.Animator?.Play(dir == AttackDirection.Up ? "SlashUp" : dir == AttackDirection.Down ? "SlashDown" : "Slash");
+            ShowSlashEffect(dir, sideRight);
             Attacked?.Invoke(dir);
+        }
+
+        // The nail swipe is drawn by its own child (visual only). Built on the first swing, once the hero's art exists.
+        // Side swings use the first swipe for now; the alternate and the wall offset come with the alternate-swing task.
+        void ShowSlashEffect(AttackDirection dir, bool goesRight)
+        {
+            if (slashEffect == null) slashEffect = HeroSlashEffect.TryCreate(transform, owner.Animator);
+            if (slashEffect != null) slashEffect.Show(dir, goesRight, false);
         }
 
         void PlaceHitbox(HeroConfig cfg, AttackDirection dir, bool sideRight)
@@ -274,6 +284,7 @@ namespace Hollowknight.Silksong
             clingCancelled = false;
             if (hitbox != null) hitbox.enabled = false;
             hitThisSwing.Clear();
+            if (slashEffect != null) slashEffect.Hide();
         }
 
         void DetectHits()
@@ -305,6 +316,7 @@ namespace Hollowknight.Silksong
             if (bouncing) return;
             bouncing = true;
             bounceElapsed = 0f;
+            if (slashEffect != null) slashEffect.Hide();   // the down swipe ends with the pogo
             // A bounce gives the air dash back (the cooldown is left alone, like the original).
             owner.Dash.ResetAirDashAllowance();
             Stubs.NotImplemented("Hero bounce refreshes double jump");
